@@ -8,3 +8,12 @@ edition = "2021"
 [dependencies]
 embedded-hal = { version = "0.2.7" }
 esp-println = { version = "*" }
+
+[[example]]
+name = "lcd-test"
+
+[example.lcd-test.dependencies]
+esp32-hal = { version = "0.17.0", features = ["esp32-hal/xtal-40mhz"] }
+esp-backtrace = { version = "0.10.0", features = ["esp32", "panic-handler", "exception-handler", "print-uart"] }
+esp-println = { version = "*", features = ["esp32"] }
+pcf857x = { version = "*" }
