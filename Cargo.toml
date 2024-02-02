@@ -3,17 +3,14 @@ name = "lcd1602"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 embedded-hal = { version = "0.2.7" }
-esp-println = { version = "*" }
+esp-println = { version = "*", features = ["esp32"] }
+
+[dev-dependencies]
+esp32-hal = { version = "0.18.0", features = ["xtal-40mhz"] }
+esp-backtrace = { version = "0.10.0", features = ["esp32", "panic-handler", "exception-handler", "print-uart"] }
+pcf857x = { version = "*" }
 
 [[example]]
-name = "lcd-test"
-
-[example.lcd-test.dependencies]
-esp32-hal = { version = "0.17.0", features = ["esp32-hal/xtal-40mhz"] }
-esp-backtrace = { version = "0.10.0", features = ["esp32", "panic-handler", "exception-handler", "print-uart"] }
-esp-println = { version = "*", features = ["esp32"] }
-pcf857x = { version = "*" }
+name = "esp32"
