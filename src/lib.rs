@@ -56,7 +56,7 @@ impl<I: Interface, Delay: DelayUs<u16>> LCD1602<I, Delay> {
     #[inline]
     pub fn clear(&mut self) -> Result<(), I::Error> {
         self.interface.write(0b0000_0001, true)?;
-        self.delay.delay_us(100);
+        self.delay.delay_us(50);
         Ok(())
     }
 
@@ -82,9 +82,24 @@ impl<I: Interface, Delay: DelayUs<u16>> LCD1602<I, Delay> {
         self.interface.write(cmd, true)
     }
 
+    pub fn pos(&mut self, line: Lines, position: u8) -> Result<(), I::Error> {
+        let cmd = match line {
+            Lines::One => position | 0b1000_0000,
+            Lines::Two => (0x40 + position) | 0b1000_0000,
+        };
+        self.interface.write(cmd, true)
+    }
+
     #[inline]
     pub fn write_byte(&mut self, data: u8) -> Result<(), I::Error> {
         self.interface.write(data, false)
+    }
+
+    pub fn write_bytes(&mut self, data: &[u8]) -> Result<(), I::Error> {
+        for b in data {
+            self.write_byte(*b)?;
+        }
+        Ok(())
     }
 
     pub fn write_str(&mut self, s: &str) -> Result<(), I::Error> {

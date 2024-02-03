@@ -48,10 +48,19 @@ fn main() -> ! {
     .unwrap();
     lcd.configure(true, false, false, false, ShiftDirection::Right)
         .unwrap();
+    lcd.pos(Lines::One, 16).unwrap();
+    let text = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
+    lcd.write_bytes(&text).unwrap();
+    lcd.pos(Lines::Two, 16).unwrap();
+    lcd.write_bytes(&text).unwrap();
     loop {
-        lcd.write_str("  Hello ESP32!").unwrap();
-        delay.delay_ms(1000u32);
-        lcd.clear().unwrap();
-        delay.delay_ms(1000u32);
+        for _ in 0..(16 + text.len()) {
+            lcd.shift(true, ShiftDirection::Left).unwrap();
+            delay.delay_ms(100u32);
+        }
+        for _ in 0..(16 + text.len()) {
+            lcd.shift(true, ShiftDirection::Right).unwrap();
+            delay.delay_ms(100u32);
+        }
     }
 }
