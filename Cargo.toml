@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 embedded-hal = { version = "0.2.7" }
-esp-println = { version = "*", features = ["esp32"] }
 
 [dev-dependencies]
 esp32-hal = { version = "0.18.0", features = ["xtal-40mhz"] }

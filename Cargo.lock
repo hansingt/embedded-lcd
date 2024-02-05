@@ -322,9 +322,6 @@ name = "esp-println"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e4c46223e9f05304d2733f935bf3c50af108b2ca24ff53a7aba21584d5bbbb9"
-dependencies = [
- "critical-section",
-]
 
 [[package]]
 name = "esp32"
@@ -442,7 +439,6 @@ version = "0.1.0"
 dependencies = [
  "embedded-hal",
  "esp-backtrace",
- "esp-println",
  "esp32-hal",
  "pcf857x",
 ]
