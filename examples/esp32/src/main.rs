@@ -3,13 +3,14 @@
 #[allow(unused_imports)]
 use esp_backtrace as _;
 
-use embedded_lcd::Lines;
+use embedded_lcd::{Cursor, Font, Lines, Shift, ShiftDirection};
 use esp_hal::i2c::master::I2c;
 use esp_hal::{delay::Delay, prelude::*};
-use esp_println::println;
 
 #[entry]
 fn main() -> ! {
+    esp_println::logger::init_logger_from_env();
+
     let peripherals = esp_hal::init(esp_hal::Config::default());
     let mut delay = Delay::new();
 
@@ -26,21 +27,22 @@ fn main() -> ! {
 
     // Initialize the LCD
     delay.delay(50.millis());
-    println!("Initialize LCD...");
     let mut lcd = embedded_lcd::Display::new(embedded_lcd::interfaces::I2c::new(&mut i2c, 0x27))
+        .with_lines(Lines::One)
+        .with_font(Font::Font5x10)
+        .with_cursor(Cursor::Disabled)
+        .with_shift(Shift::Cursor, ShiftDirection::Right)
         .enabled(true)
-        .with_cursor(true, false)
         .init(&mut delay)
         .unwrap();
     lcd.enable_backlight().unwrap();
 
-    println!("Start writing...");
     loop {
-        lcd.pos(Lines::One, 0, &mut delay).unwrap();
+        lcd.clear(&mut delay).unwrap();
         lcd.write_str("Hello", &mut delay).unwrap();
-        delay.delay(500.millis());
-        lcd.pos(Lines::One, 0, &mut delay).unwrap();
+        delay.delay(1000.millis());
+        lcd.home(&mut delay).unwrap();
         lcd.write_str("World!", &mut delay).unwrap();
-        delay.delay(500.millis());
+        delay.delay(1000.millis());
     }
 }

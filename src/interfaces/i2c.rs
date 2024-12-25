@@ -1,4 +1,5 @@
-use crate::interfaces::{BlockingInterface, Interface, InterfaceWidth};
+use crate::interfaces::{BlockingInterface, Interface};
+use crate::{Font, Lines};
 use embedded_hal::delay::DelayNs;
 use embedded_hal::i2c::{AddressMode, I2c as EMI2c};
 
@@ -24,16 +25,19 @@ where
         }
     }
 
-    fn write_nibble(&mut self, data: u8, delay: &mut impl DelayNs) -> Result<(), I::Error> {
-        self.i2c.write(
-            self.address.clone(),
-            &[data & 0b1111_0000 | self.backlight | ENABLE],
-        )?;
+    fn write_nibble(
+        &mut self,
+        data: u8,
+        command: bool,
+        delay: &mut impl DelayNs,
+    ) -> Result<(), I::Error> {
+        let nibble = data & 0xF0 | !command as u8;
+        log::trace!("Writing nibble {:#010b}", nibble >> 4);
+        self.i2c
+            .write(self.address.clone(), &[nibble | self.backlight | ENABLE])?;
         delay.delay_us(1);
-        self.i2c.write(
-            self.address.clone(),
-            &[data & 0b1111_0000 | self.backlight & !ENABLE],
-        )?;
+        self.i2c
+            .write(self.address.clone(), &[nibble | self.backlight & !ENABLE])?;
         Ok(())
     }
 }
@@ -44,10 +48,6 @@ where
     I: EMI2c<A>,
 {
     type Error = I::Error;
-
-    fn interface_width() -> InterfaceWidth {
-        InterfaceWidth::FourBit
-    }
 }
 
 impl<'b, A, I> BlockingInterface for I2c<'b, I, A>
@@ -55,16 +55,36 @@ where
     A: AddressMode + Clone,
     I: EMI2c<A>,
 {
+    fn initialize(
+        &mut self,
+        lines: Lines,
+        font: Font,
+        delay: &mut impl DelayNs,
+    ) -> Result<(), Self::Error> {
+        // Initialize the display
+        self.write_nibble(0b0011_0000, true, delay)?;
+        delay.delay_us(4500);
+        self.write_nibble(0b0011_0000, true, delay)?;
+        delay.delay_us(150);
+        self.write_nibble(0b0011_0000, true, delay)?;
+        // Set the interface to 4-Bit length
+        self.write_nibble(0b0010_0000, true, delay)?;
+        // Configure the display
+        self.write_command(0b0010_0000 | lines as u8 | font as u8, delay)?;
+        Ok(())
+    }
+
     fn write_command(&mut self, command: u8, delay: &mut impl DelayNs) -> Result<(), Self::Error> {
-        self.write_nibble(command, delay)?;
-        self.write_nibble(command << 4, delay)?;
+        log::debug!("Writing command {:#010b} to LCD Display", command);
+        self.write_nibble(command, true, delay)?;
+        self.write_nibble(command << 4, true, delay)?;
         Ok(())
     }
 
     fn write_data(&mut self, data: u8, delay: &mut impl DelayNs) -> Result<(), Self::Error> {
-        let data = 0b0000_0001 | (data << 4);
-        self.write_nibble(data, delay)?;
-        self.write_nibble(data << 4, delay)?;
+        log::debug!("Writing data '{:#010b}' to LCD Display", data);
+        self.write_nibble(data, false, delay)?;
+        self.write_nibble(data << 4, false, delay)?;
         Ok(())
     }
 

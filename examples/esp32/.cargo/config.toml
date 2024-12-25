@@ -2,11 +2,11 @@
 runner = "espflash flash --monitor"
 
 [env]
-ESP_LOG="info"
+ESP_LOG = "trace"
 
 [build]
 rustflags = [
-  "-C", "link-arg=-nostartfiles",
+    "-C", "link-arg=-nostartfiles",
 ]
 
 target = "xtensa-esp32-none-elf"

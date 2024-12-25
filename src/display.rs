@@ -1,6 +1,18 @@
-use crate::interfaces::{BlockingInterface, Interface, InterfaceWidth};
-use crate::{Font, Lines, ShiftDirection};
+use crate::interfaces::{BlockingInterface, Interface};
+use crate::{Cursor, Font, Lines, Shift, ShiftDirection};
 use embedded_hal::delay::DelayNs;
+
+#[repr(u8)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+enum Commands {
+    Clear = 1,
+    Home = 2,
+    EntryModeSet = 4,
+    DisplayControl = 8,
+    Shift = 16,
+    //SetCharacterGeneratorAddress = 64,
+    SetDisplayDataAddress = 128,
+}
 
 #[derive(Debug)]
 pub struct Display<I> {
@@ -21,8 +33,8 @@ where
             interface,
             lines: Lines::default(),
             font: Font::default(),
-            display_control: 0b0000_1000,
-            entry_mode: 0b0000_0100,
+            display_control: Commands::DisplayControl as u8,
+            entry_mode: Commands::EntryModeSet as u8,
         }
     }
 
@@ -39,14 +51,14 @@ where
     }
 
     #[inline]
-    pub fn with_shift(mut self, shift_display: bool, shift_direction: ShiftDirection) -> Self {
-        self.entry_mode |= (shift_direction as u8) << 1 | (shift_display as u8);
+    pub fn with_shift(mut self, shift: Shift, shift_direction: ShiftDirection) -> Self {
+        self.entry_mode += shift_direction as u8 + shift as u8;
         self
     }
 
     #[inline]
-    pub fn with_cursor(mut self, enabled: bool, blink: bool) -> Self {
-        self.display_control |= (enabled as u8) << 1 | blink as u8;
+    pub fn with_cursor(mut self, cursor: Cursor) -> Self {
+        self.display_control += cursor as u8;
         self
     }
 
@@ -59,24 +71,8 @@ where
 
 impl<I: BlockingInterface> Display<I> {
     pub fn init(mut self, delay: &mut impl DelayNs) -> Result<Self, I::Error> {
-        // Initialize the display
-        self.interface.write_command(0b0011_0000, delay)?;
-        delay.delay_us(4500);
-        self.interface.write_command(0b0011_0000, delay)?;
-        delay.delay_us(150);
-        self.interface.write_command(0b0011_0000, delay)?;
-        if I::interface_width() == InterfaceWidth::FourBit {
-            // Set the interface to 4-Bit length
-            self.interface.write_command(0b0010_0000, delay)?;
-        }
-        // configure the number of lines and the font size to use
-        if I::interface_width() == InterfaceWidth::FourBit {
-            self.interface
-                .write_command(0b0010_0000 | self.lines as u8 | self.font as u8, delay)?;
-        } else {
-            self.interface
-                .write_command(0b0011_0000 | self.lines as u8 | self.font as u8, delay)?;
-        }
+        log::info!("Initializing LCD");
+        self.interface.initialize(self.lines, self.font, delay)?;
         // Configure the display
         self.interface.write_command(self.display_control, delay)?;
         self.interface.write_command(self.entry_mode, delay)?;
@@ -84,63 +80,45 @@ impl<I: BlockingInterface> Display<I> {
         Ok(self)
     }
 
-    pub fn enable_display(&mut self, delay: &mut impl DelayNs) -> Result<(), I::Error> {
-        self.display_control |= 0b0000_0100;
-        self.interface.write_command(self.display_control, delay)?;
-        Ok(())
-    }
-
-    pub fn disable_display(&mut self, delay: &mut impl DelayNs) -> Result<(), I::Error> {
-        self.display_control &= !0b0000_0100;
-        self.interface.write_command(self.display_control, delay)?;
-        Ok(())
-    }
-
-    pub fn enable_cursor(&mut self, delay: &mut impl DelayNs) -> Result<(), I::Error> {
-        self.display_control |= 0b0000_0010;
-        self.interface.write_command(self.display_control, delay)?;
-        Ok(())
-    }
-
-    pub fn disable_cursor(&mut self, delay: &mut impl DelayNs) -> Result<(), I::Error> {
-        self.display_control &= !0b0000_0010;
-        self.interface.write_command(self.display_control, delay)?;
-        Ok(())
-    }
-
-    pub fn enable_blink(&mut self, delay: &mut impl DelayNs) -> Result<(), I::Error> {
-        self.display_control |= 0b0000_0001;
-        self.interface.write_command(self.display_control, delay)?;
-        Ok(())
-    }
-
-    pub fn disable_blink(&mut self, delay: &mut impl DelayNs) -> Result<(), I::Error> {
-        self.display_control &= !0b0000_0001;
-        self.interface.write_command(self.display_control, delay)?;
-        Ok(())
-    }
-
     #[inline]
     pub fn enable_backlight(&mut self) -> Result<(), I::Error> {
+        log::info!("Enable backlight");
         self.interface.backlight(true)
     }
 
     #[inline]
     pub fn disable_backlight(&mut self) -> Result<(), I::Error> {
+        log::info!("Disable backlight");
         self.interface.backlight(false)
     }
 
     #[inline]
     pub fn clear(&mut self, delay: &mut impl DelayNs) -> Result<(), I::Error> {
-        self.interface.write_command(0b0000_0001, delay)?;
+        log::info!("Clearing display");
+        self.interface.write_command(Commands::Clear as u8, delay)?;
         delay.delay_us(50);
         Ok(())
     }
 
     #[inline]
     pub fn home(&mut self, delay: &mut impl DelayNs) -> Result<(), I::Error> {
-        self.interface.write_command(0b0000_0010, delay)?;
+        log::info!("Moving cursor home");
+        self.interface.write_command(Commands::Home as u8, delay)?;
         Ok(())
+    }
+
+    #[inline]
+    pub fn shift(
+        &mut self,
+        shift: Shift,
+        shift_direction: ShiftDirection,
+        delay: &mut impl DelayNs,
+    ) -> Result<(), I::Error> {
+        log::info!("Shifting the {} to the {}", shift, shift_direction);
+        self.interface.write_command(
+            Commands::Shift as u8 + ((shift as u8 + shift_direction as u8) << 2),
+            delay,
+        )
     }
 
     pub fn pos(
@@ -149,10 +127,12 @@ impl<I: BlockingInterface> Display<I> {
         position: u8,
         delay: &mut impl DelayNs,
     ) -> Result<(), I::Error> {
-        let cmd = match line {
-            Lines::One => position | 0b1000_0000,
-            Lines::Two => (0x40 + position) | 0b1000_0000,
-        };
+        log::info!("Moving cursor to position {} on line {}", position, line);
+        let cmd = Commands::SetDisplayDataAddress as u8
+            | match line {
+                Lines::One => position,
+                Lines::Two => 0x40 + position,
+            };
         self.interface.write_command(cmd, delay)?;
         Ok(())
     }
@@ -174,6 +154,7 @@ impl<I: BlockingInterface> Display<I> {
         s: S,
         delay: &mut impl DelayNs,
     ) -> Result<(), I::Error> {
+        log::info!("Writing string '{}' to LCD", s.as_ref());
         for c in s.as_ref().chars() {
             match c.is_ascii() {
                 true => self.write_byte(c as u8, delay)?,

@@ -10,9 +10,10 @@ esp-backtrace = { version = "0.14.2", features = [
     "panic-handler",
     "println",
 ] }
-esp-hal = { version = "0.22.0", features = [ "esp32" ] }
-esp-println = { version = "0.12.0", features = ["esp32", "auto"] }
-embedded-lcd = { path = "../.." }
+esp-hal = { version = "0.22.0", features = ["esp32"] }
+esp-println = { version = "0.12.0", features = ["esp32", "log"] }
+log = { version = "0.4.22" }
+embedded-lcd = { path = "../..", features = ["log"] }
 
 [profile.dev]
 # Rust debug is too slow.
