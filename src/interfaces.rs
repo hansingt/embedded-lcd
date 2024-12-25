@@ -1,24 +1,24 @@
-mod parallel_eight_bits;
-mod parallel_four_bits;
+mod i2c;
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum Font {
-    FiveTimesEightDots = 0b0010_0000,
-    FiveTimesTenDots = 0b0010_0100,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum Lines {
-    One = 0b0010_0000,
-    Two = 0b0010_1000,
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+pub enum InterfaceWidth {
+    FourBit,
+    EightBit,
 }
 
 pub trait Interface {
     type Error;
 
-    fn initialize(&mut self, lines: Lines, font: Font) -> Result<(), Self::Error>;
-    fn write(&mut self, data: u8, command: bool) -> Result<(), Self::Error>;
+    fn interface_width() -> InterfaceWidth;
 }
 
-pub use parallel_eight_bits::{Parallel8Bits, Parallel8BitsError};
-pub use parallel_four_bits::{Parallel4Bits, Parallel4BitsError};
+pub trait BlockingInterface: Interface {
+    fn write_command(&mut self, command: u8, delay: &mut impl DelayNs) -> Result<(), Self::Error>;
+    fn write_data(&mut self, command: u8, delay: &mut impl DelayNs) -> Result<(), Self::Error>;
+
+    fn backlight(&mut self, enable: bool) -> Result<(), Self::Error>;
+}
+
+use embedded_hal::delay::DelayNs;
+// Re-exports
+pub use i2c::I2c;

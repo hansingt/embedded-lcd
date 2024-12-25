@@ -1,15 +1,8 @@
 [package]
-name = "lcd1602"
+name = "embedded-lcd"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-embedded-hal = { version = "0.2.7" }
-
-[dev-dependencies]
-esp32-hal = { version = "0.18.0", features = ["xtal-40mhz"] }
-esp-backtrace = { version = "0.10.0", features = ["esp32", "panic-handler", "exception-handler", "print-uart"] }
-pcf857x = { version = "*" }
-
-[[example]]
-name = "esp32"
+embedded-hal = { version = "1.0.0" }
+embedded-hal-async = {version = "1.0.0" }

@@ -1,8 +1,9 @@
 use core::fmt::Debug;
-
-use embedded_hal::{blocking::delay::DelayUs, digital::v2::OutputPin};
-
-use super::{Font, Interface, Lines};
+use core::marker::PhantomData;
+use embedded_hal::delay::DelayNs;
+use embedded_hal::digital::OutputPin;
+use crate::{Blocking, Mode};
+use super::{BlockingInterface, Font, Interface, Lines};
 
 #[derive(Debug)]
 pub enum Parallel8BitsError<
@@ -29,7 +30,7 @@ pub enum Parallel8BitsError<
     D7Error(D7Error),
 }
 
-pub struct Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS, Delay>
+pub struct Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS, M>
 where
     D0: OutputPin,
     D1: OutputPin,
@@ -41,7 +42,7 @@ where
     D7: OutputPin,
     EN: OutputPin,
     RS: OutputPin,
-    Delay: DelayUs<u16>,
+    M: Mode,
 {
     d0: D0,
     d1: D1,
@@ -53,11 +54,11 @@ where
     d7: D7,
     en: EN,
     rs: RS,
-    delay: Delay,
+    _mode: PhantomData<M>,
 }
 
-impl<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS, Delay>
-    Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS, Delay>
+impl<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS, M>
+    Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS, M>
 where
     D0: OutputPin,
     D1: OutputPin,
@@ -69,7 +70,7 @@ where
     D7: OutputPin,
     EN: OutputPin,
     RS: OutputPin,
-    Delay: DelayUs<u16>,
+    M: Mode,
 {
     #[allow(clippy::too_many_arguments)]
     #[inline]
@@ -84,7 +85,6 @@ where
         d7: D7,
         en: EN,
         rs: RS,
-        delay: Delay,
     ) -> Self {
         Self {
             d0,
@@ -97,14 +97,30 @@ where
             d7,
             en,
             rs,
-            delay,
+            _mode: PhantomData,
         }
     }
+}
 
+impl<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS>
+    Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS, Blocking>
+where
+    D0: OutputPin,
+    D1: OutputPin,
+    D2: OutputPin,
+    D3: OutputPin,
+    D4: OutputPin,
+    D5: OutputPin,
+    D6: OutputPin,
+    D7: OutputPin,
+    EN: OutputPin,
+    RS: OutputPin,
+{
     #[allow(clippy::complexity)]
-    fn write_byte(
+    fn write_byte<D: DelayNs>(
         &mut self,
         data: u8,
+        delay: &mut D,
     ) -> Result<
         (),
         Parallel8BitsError<
@@ -156,16 +172,15 @@ where
 
         // Open the latch
         self.en.set_high().map_err(Parallel8BitsError::ENError)?;
-
-        self.delay.delay_us(1);
+        delay.delay_us(1);
         // Close the latch
         self.en.set_low().map_err(Parallel8BitsError::ENError)?;
         Ok(())
     }
 }
 
-impl<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS, Delay> Interface
-    for Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS, Delay>
+impl<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS> Interface
+    for Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS, Blocking>
 where
     D0: OutputPin,
     D1: OutputPin,
@@ -177,7 +192,6 @@ where
     D7: OutputPin,
     EN: OutputPin,
     RS: OutputPin,
-    Delay: DelayUs<u16>,
 {
     type Error = Parallel8BitsError<
         D0::Error,
@@ -191,22 +205,38 @@ where
         EN::Error,
         RS::Error,
     >;
+}
 
-    fn initialize(&mut self, lines: Lines, font: Font) -> Result<(), Self::Error> {
-        self.write(0b0011_0000, true)?;
-        self.delay.delay_us(4500);
-        self.write(0b0011_0000, true)?;
-        self.delay.delay_us(150);
-        self.write(0b0011_0000, true)?;
-        self.write(0b0011_0000 | lines as u8 | font as u8, true)
+
+impl<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS> BlockingInterface
+    for Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, EN, RS, Blocking>
+where
+    D0: OutputPin,
+    D1: OutputPin,
+    D2: OutputPin,
+    D3: OutputPin,
+    D4: OutputPin,
+    D5: OutputPin,
+    D6: OutputPin,
+    D7: OutputPin,
+    EN: OutputPin,
+    RS: OutputPin,
+{
+    fn initialize(&mut self, lines: Lines, font: Font, delay: &mut impl DelayNs) -> Result<(), Self::Error> {
+        self.write(0b0011_0000, true, delay)?;
+        delay.delay_us(4500);
+        self.write(0b0011_0000, true, delay)?;
+        delay.delay_us(150);
+        self.write(0b0011_0000, true, delay)?;
+        self.write(0b0011_0000 | lines as u8 | font as u8, true, delay)
     }
 
-    fn write(&mut self, data: u8, command: bool) -> Result<(), Self::Error> {
+    fn write(&mut self, data: u8, command: bool, delay: &mut impl DelayNs) -> Result<(), Self::Error> {
         match command {
             true => self.rs.set_low().map_err(Parallel8BitsError::RSError),
             false => self.rs.set_high().map_err(Parallel8BitsError::RSError),
         }?;
         // We want to write data
-        self.write_byte(data)
+        self.write_byte(data, delay)
     }
 }

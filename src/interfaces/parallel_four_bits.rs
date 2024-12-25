@@ -1,8 +1,6 @@
 use core::fmt::Debug;
+use embedded_hal::digital::OutputPin;
 
-use embedded_hal::{blocking::delay::DelayUs, digital::v2::OutputPin};
-
-use super::{Font, Interface, Lines};
 
 #[derive(Debug)]
 pub enum Parallel4BitsError<D7Error, D6Error, D5Error, D4Error, ENError, RSError> {
@@ -14,7 +12,7 @@ pub enum Parallel4BitsError<D7Error, D6Error, D5Error, D4Error, ENError, RSError
     D4Error(D4Error),
 }
 
-pub struct Parallel4Bits<D7, D6, D5, D4, EN, RS, Delay>
+pub struct Parallel4Bits<D7, D6, D5, D4, EN, RS, M>
 where
     D7: OutputPin,
     D6: OutputPin,
@@ -22,7 +20,7 @@ where
     D4: OutputPin,
     EN: OutputPin,
     RS: OutputPin,
-    Delay: DelayUs<u16>,
+    M: Mode,
 {
     d7: D7,
     d6: D6,
@@ -30,10 +28,10 @@ where
     d4: D4,
     en: EN,
     rs: RS,
-    delay: Delay,
+    _mode: PhantomData<M>,
 }
 
-impl<D7, D6, D5, D4, EN, RS, Delay> Parallel4Bits<D7, D6, D5, D4, EN, RS, Delay>
+impl<D7, D6, D5, D4, EN, RS, M> Parallel4Bits<D7, D6, D5, D4, EN, RS, M>
 where
     D7: OutputPin,
     D6: OutputPin,
@@ -41,9 +39,9 @@ where
     D4: OutputPin,
     EN: OutputPin,
     RS: OutputPin,
-    Delay: DelayUs<u16>,
+    M: Mode,
 {
-    pub fn new(d7: D7, d6: D6, d5: D5, d4: D4, en: EN, rs: RS, delay: Delay) -> Self {
+    pub fn new(d7: D7, d6: D6, d5: D5, d4: D4, en: EN, rs: RS) -> Self {
         Parallel4Bits {
             d7,
             d6,
@@ -51,14 +49,25 @@ where
             d4,
             en,
             rs,
-            delay,
+            _mode: PhantomData,
         }
     }
+}
 
+impl<D7, D6, D5, D4, EN, RS> Parallel4Bits<D7, D6, D5, D4, EN, RS, Blocking>
+where
+    D7: OutputPin,
+    D6: OutputPin,
+    D5: OutputPin,
+    D4: OutputPin,
+    EN: OutputPin,
+    RS: OutputPin, 
+{
     #[allow(clippy::complexity)]
-    fn write_nibble(
+    fn write_nibble<D: DelayNs>(
         &mut self,
         data: u8,
+        delay: &mut D,
     ) -> Result<
         (),
         Parallel4BitsError<D7::Error, D6::Error, D5::Error, D4::Error, EN::Error, RS::Error>,
@@ -82,14 +91,14 @@ where
         }?;
         // Open the latch
         self.en.set_high().map_err(Parallel4BitsError::ENError)?;
-        self.delay.delay_us(1);
+        delay.delay_us(1);
         // Close the latch
         self.en.set_low().map_err(Parallel4BitsError::ENError)?;
         Ok(())
     }
 }
 
-impl<D7, D6, D5, D4, EN, RS, Delay> Interface for Parallel4Bits<D7, D6, D5, D4, EN, RS, Delay>
+impl<D7, D6, D5, D4, EN, RS> Interface for Parallel4Bits<D7, D6, D5, D4, EN, RS, Blocking>
 where
     D7: OutputPin,
     D6: OutputPin,
@@ -97,19 +106,27 @@ where
     D4: OutputPin,
     EN: OutputPin,
     RS: OutputPin,
-    Delay: DelayUs<u16>,
 {
     type Error =
-        Parallel4BitsError<D7::Error, D6::Error, D5::Error, D4::Error, EN::Error, RS::Error>;
+    Parallel4BitsError<D7::Error, D6::Error, D5::Error, D4::Error, EN::Error, RS::Error>;
+}
 
-    fn initialize(&mut self, lines: Lines, font: Font) -> Result<(), Self::Error> {
-        self.write_nibble(0b0011)?;
-        self.delay.delay_us(4500);
-        self.write_nibble(0b0011)?;
-        self.delay.delay_us(150);
-        self.write_nibble(0b0011)?;
-
-        self.write_nibble(0b0010)?;
+impl<D7, D6, D5, D4, EN, RS> BlockingInterface for Parallel4Bits<D7, D6, D5, D4, EN, RS, Blocking>
+where
+    D7: OutputPin,
+    D6: OutputPin,
+    D5: OutputPin,
+    D4: OutputPin,
+    EN: OutputPin,
+    RS: OutputPin,
+{
+    fn initialize(&mut self, lines: Lines, font: Font, delay: &mut impl DelayNs) -> Result<(), Self::Error> {
+        self.write_nibble(0b0011, delay)?;
+        delay.delay_us(4500);
+        self.write_nibble(0b0011, delay)?;
+        delay.delay_us(150);
+        self.write_nibble(0b0011, delay)?;
+        self.write_nibble(0b0010, delay)?;
 
         let function_set = match font {
             Font::FiveTimesTenDots => 0b0010_0100,
@@ -118,20 +135,20 @@ where
                 Lines::Two => 0b0010_1000,
             },
         };
-        self.write(function_set, true)
+        self.write(function_set, true, delay)
     }
 
-    fn write(&mut self, data: u8, command: bool) -> Result<(), Self::Error> {
+    fn write(&mut self, data: u8, command: bool, delay: &mut impl DelayNs) -> Result<(), Self::Error> {
         match command {
             true => self.rs.set_low().map_err(Parallel4BitsError::RSError),
             false => self.rs.set_high().map_err(Parallel4BitsError::RSError),
         }?;
 
         // Write the upper word
-        self.write_nibble(data >> 4)?;
+        self.write_nibble(data >> 4, delay)?;
 
         // Then write the lower word
-        self.write_nibble(data & 0b0000_1111)?;
+        self.write_nibble(data & 0b0000_1111, delay)?;
         Ok(())
     }
 }
