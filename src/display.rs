@@ -142,11 +142,26 @@ impl<I: BlockingInterface> Display<I> {
         Ok(())
     }
 
+    pub fn write_character(&mut self, c: char) -> Result<(), I::Error> {
+        match c.is_ascii() {
+            true => self.write_byte(c as u8)?,
+            false => match c {
+                'ä' | 'Ä' => self.write_byte(0b1110_0001)?,
+                'ß' => self.write_byte(0b1110_0010)?,
+                'ö' | 'Ö' => self.write_byte(0b1110_1111)?,
+                'ü' | 'Ü' => self.write_byte(0b1111_0101)?,
+                '°' => self.write_byte(0b1101_1111)?,
+                _ => self.write_byte(0b0011_1111)?, // == ?
+            },
+        }
+        Ok(())
+    }
+
     pub fn write_string<S: AsRef<str>>(&mut self, s: S) -> Result<(), I::Error> {
         #[cfg(feature = "log")]
         log::info!("Writing string '{}' to LCD", s.as_ref());
         for c in s.as_ref().chars() {
-            self.write_byte(c as u8)?;
+            self.write_character(c)?;
         }
         Ok(())
     }
@@ -163,6 +178,6 @@ where
 
     #[inline]
     fn write_char(&mut self, c: char) -> core::fmt::Result {
-        self.write_byte(c as u8).map_err(|_| core::fmt::Error)
+        self.write_character(c).map_err(|_| core::fmt::Error)
     }
 }
