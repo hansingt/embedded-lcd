@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+default = []
 log = ["dep:log"]
 
 [dependencies]
 embedded-hal = { version = "1.0.0" }
-embedded-hal-async = { version = "1.0.0" }
+embedded-hal-async = "1.0.0"
 log = { version = "0.4.22", optional = true }

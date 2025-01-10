@@ -1,5 +1,0 @@
-[wokwi]
-version = 1
-gdbServerPort = 63342
-elf = "target/xtensa-esp32-none-elf/debug/embedded-lcd-esp32-example"
-firmware = "target/xtensa-esp32-none-elf/debug/embedded-lcd-esp32-example"

@@ -1,5 +1,7 @@
-use crate::interfaces::{BlockingInterface, Interface};
-use crate::{Cursor, Font, Lines, Shift, ShiftDirection};
+use crate::interfaces::{AsyncInterface, BlockingInterface, Interface};
+use crate::{Async, Blocking, Cursor, Font, Lines, Mode, Shift, ShiftDirection};
+use core::marker::PhantomData;
+use embedded_hal::digital::OutputPin;
 
 #[repr(u8)]
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
@@ -14,29 +16,17 @@ enum Commands {
 }
 
 #[derive(Debug)]
-pub struct Display<I> {
+pub struct Display<I: Interface, B: OutputPin, DM: Mode> {
     interface: I,
+    backlight: Option<B>,
     lines: Lines,
     font: Font,
     display_control: u8,
     entry_mode: u8,
+    _mode: PhantomData<DM>,
 }
 
-impl<I> Display<I>
-where
-    I: Interface,
-{
-    #[inline]
-    pub fn new(interface: I) -> Self {
-        Self {
-            interface,
-            lines: Lines::default(),
-            font: Font::default(),
-            display_control: Commands::DisplayControl as u8,
-            entry_mode: Commands::EntryModeSet as u8,
-        }
-    }
-
+impl<I: Interface, B: OutputPin, DM: Mode> Display<I, B, DM> {
     #[inline]
     pub fn with_lines(mut self, lines: Lines) -> Self {
         self.lines = lines;
@@ -66,39 +56,79 @@ where
         self.display_control |= (enabled as u8) << 2;
         self
     }
+
+    #[inline]
+    pub fn with_backlight(mut self, pin: B) -> Self {
+        self.backlight = Some(pin);
+        self
+    }
+
+    #[inline]
+    pub fn enable_backlight(&mut self) -> Result<(), B::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Enable backlight");
+        if self.backlight.is_some() {
+            self.backlight.as_mut().unwrap().set_high()?;
+        }
+        Ok(())
+    }
+
+    #[inline]
+    pub fn disable_backlight(&mut self) -> Result<(), B::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Disable backlight");
+        if self.backlight.is_some() {
+            self.backlight.as_mut().unwrap().set_low()?;
+        }
+        Ok(())
+    }
+
+    fn character_as_byte(c: char) -> u8 {
+        match c.is_ascii() {
+            true => c as u8,
+            false => match c {
+                'ä' | 'Ä' => 0b1110_0001,
+                'ß' => 0b1110_0010,
+                'ö' | 'Ö' => 0b1110_1111,
+                'ü' | 'Ü' => 0b1111_0101,
+                '°' => 0b1101_1111,
+                _ => 0b0011_1111, // == ?
+            },
+        }
+    }
 }
 
-impl<I: BlockingInterface> Display<I> {
+impl<I: BlockingInterface, B: OutputPin> Display<I, B, Blocking> {
+    #[inline(always)]
+    pub fn new(interface: I) -> Self {
+        Self {
+            interface,
+            backlight: None,
+            lines: Lines::default(),
+            font: Font::default(),
+            display_control: Commands::DisplayControl as u8,
+            entry_mode: Commands::EntryModeSet as u8,
+            _mode: PhantomData,
+        }
+    }
+
     pub fn init(mut self) -> Result<Self, I::Error> {
         #[cfg(feature = "log")]
         log::info!("Initializing LCD");
         self.interface.initialize(self.lines, self.font)?;
         // Configure the display
-        self.interface.write_command(self.display_control)?;
-        self.interface.write_command(self.entry_mode)?;
+        self.interface.write(self.display_control, true)?;
+        self.interface.write(self.entry_mode, true)?;
         self.clear()?;
         Ok(self)
-    }
-
-    #[inline]
-    pub fn enable_backlight(&mut self) -> Result<(), I::Error> {
-        #[cfg(feature = "log")]
-        log::info!("Enable backlight");
-        self.interface.backlight(true)
-    }
-
-    #[inline]
-    pub fn disable_backlight(&mut self) -> Result<(), I::Error> {
-        #[cfg(feature = "log")]
-        log::info!("Disable backlight");
-        self.interface.backlight(false)
     }
 
     #[inline]
     pub fn clear(&mut self) -> Result<(), I::Error> {
         #[cfg(feature = "log")]
         log::info!("Clearing display");
-        self.interface.write_command(Commands::Clear as u8)?;
+        self.interface.write(Commands::Clear as u8, true)?;
+        self.interface.delay_us(50);
         Ok(())
     }
 
@@ -106,7 +136,8 @@ impl<I: BlockingInterface> Display<I> {
     pub fn home(&mut self) -> Result<(), I::Error> {
         #[cfg(feature = "log")]
         log::info!("Moving cursor home");
-        self.interface.write_command(Commands::Home as u8)?;
+        self.interface.write(Commands::Home as u8, true)?;
+        self.interface.delay_us(50);
         Ok(())
     }
 
@@ -114,8 +145,10 @@ impl<I: BlockingInterface> Display<I> {
     pub fn shift(&mut self, shift: Shift, shift_direction: ShiftDirection) -> Result<(), I::Error> {
         #[cfg(feature = "log")]
         log::info!("Shifting the {} to the {}", shift, shift_direction);
-        self.interface
-            .write_command(Commands::Shift as u8 + ((shift as u8 + shift_direction as u8) << 2))
+        self.interface.write(
+            Commands::Shift as u8 + ((shift as u8 + shift_direction as u8) << 2),
+            true,
+        )
     }
 
     pub fn pos(&mut self, line: Lines, position: u8) -> Result<(), I::Error> {
@@ -123,16 +156,16 @@ impl<I: BlockingInterface> Display<I> {
         log::info!("Moving cursor to position {} on line {}", position, line);
         let cmd = Commands::SetDisplayDataAddress as u8
             | match line {
-                Lines::One => position,
-                Lines::Two => 0x40 + position,
+                Lines::_1 => position,
+                Lines::_2 => 0x40 + position,
             };
-        self.interface.write_command(cmd)?;
+        self.interface.write(cmd, true)?;
         Ok(())
     }
 
     #[inline]
     pub fn write_byte(&mut self, data: u8) -> Result<(), I::Error> {
-        self.interface.write_data(data)
+        self.interface.write(data, false)
     }
 
     pub fn write_bytes(&mut self, data: &[u8]) -> Result<(), I::Error> {
@@ -142,19 +175,9 @@ impl<I: BlockingInterface> Display<I> {
         Ok(())
     }
 
+    #[inline]
     pub fn write_character(&mut self, c: char) -> Result<(), I::Error> {
-        match c.is_ascii() {
-            true => self.write_byte(c as u8)?,
-            false => match c {
-                'ä' | 'Ä' => self.write_byte(0b1110_0001)?,
-                'ß' => self.write_byte(0b1110_0010)?,
-                'ö' | 'Ö' => self.write_byte(0b1110_1111)?,
-                'ü' | 'Ü' => self.write_byte(0b1111_0101)?,
-                '°' => self.write_byte(0b1101_1111)?,
-                _ => self.write_byte(0b0011_1111)?, // == ?
-            },
-        }
-        Ok(())
+        self.write_byte(Self::character_as_byte(c))
     }
 
     pub fn write_string<S: AsRef<str>>(&mut self, s: S) -> Result<(), I::Error> {
@@ -167,17 +190,97 @@ impl<I: BlockingInterface> Display<I> {
     }
 }
 
-impl<I> core::fmt::Write for Display<I>
-where
-    I: BlockingInterface,
-{
-    #[inline]
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        self.write_string(s).map_err(|_| core::fmt::Error)
+impl<I: AsyncInterface, B: OutputPin> Display<I, B, Async> {
+    #[inline(always)]
+    pub fn new_async(interface: I) -> Self {
+        Self {
+            interface,
+            backlight: None,
+            lines: Lines::default(),
+            font: Font::default(),
+            display_control: Commands::DisplayControl as u8,
+            entry_mode: Commands::EntryModeSet as u8,
+            _mode: PhantomData,
+        }
+    }
+
+    pub async fn init(mut self) -> Result<Self, I::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Initializing LCD");
+        self.interface.initialize(self.lines, self.font).await?;
+        // Configure the display
+        self.interface.write(self.display_control, true).await?;
+        self.interface.write(self.entry_mode, true).await?;
+        self.clear().await?;
+        Ok(self)
     }
 
     #[inline]
-    fn write_char(&mut self, c: char) -> core::fmt::Result {
-        self.write_character(c).map_err(|_| core::fmt::Error)
+    pub async fn clear(&mut self) -> Result<(), I::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Clearing display");
+        self.interface.write(Commands::Clear as u8, true).await?;
+        self.interface.delay_us(50).await;
+        Ok(())
+    }
+
+    #[inline]
+    pub async fn home(&mut self) -> Result<(), I::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Moving cursor home");
+        self.interface.write(Commands::Home as u8, true).await
+    }
+
+    #[inline]
+    pub async fn shift(
+        &mut self,
+        shift: Shift,
+        shift_direction: ShiftDirection,
+    ) -> Result<(), I::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Shifting the {} to the {}", shift, shift_direction);
+        self.interface
+            .write(
+                Commands::Shift as u8 + ((shift as u8 + shift_direction as u8) << 2),
+                true,
+            )
+            .await
+    }
+
+    pub async fn pos(&mut self, line: Lines, position: u8) -> Result<(), I::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Moving cursor to position {} on line {}", position, line);
+        let cmd = Commands::SetDisplayDataAddress as u8
+            | match line {
+                Lines::_1 => position,
+                Lines::_2 => 0x40 + position,
+            };
+        self.interface.write(cmd, true).await
+    }
+
+    #[inline]
+    pub async fn write_byte(&mut self, data: u8) -> Result<(), I::Error> {
+        self.interface.write(data, false).await
+    }
+
+    pub async fn write_bytes(&mut self, data: &[u8]) -> Result<(), I::Error> {
+        for b in data {
+            self.write_byte(*b).await?;
+        }
+        Ok(())
+    }
+
+    #[inline]
+    pub async fn write_character(&mut self, c: char) -> Result<(), I::Error> {
+        self.write_byte(Self::character_as_byte(c)).await
+    }
+
+    pub async fn write_string<S: AsRef<str>>(&mut self, s: S) -> Result<(), I::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Writing string '{}' to LCD", s.as_ref());
+        for c in s.as_ref().chars() {
+            self.write_character(c).await?;
+        }
+        Ok(())
     }
 }

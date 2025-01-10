@@ -1,0 +1,5 @@
+[wokwi]
+version = 1
+gdbServerPort = 63342
+elf = "target/xtensa-esp32-none-elf/debug/blocking"
+firmware = "target/xtensa-esp32-none-elf/debug/blocking"

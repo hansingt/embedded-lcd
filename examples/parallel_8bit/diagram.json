@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "author": "Torben Hansing",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": -198.17,
+      "left": 54.4,
+      "attrs": {}
+    }
+  ],
+  "connections": [
+    [
+      "esp:TX",
+      "$serialMonitor:RX",
+      "",
+      []
+    ],
+    [
+      "esp:RX",
+      "$serialMonitor:TX",
+      "",
+      []
+    ],
+    [
+      "esp:GND.2",
+      "lcd1:VSS",
+      "black",
+      [
+        "h4.84",
+        "v-67.2",
+        "h-19.2"
+      ]
+    ],
+    [
+      "esp:5V",
+      "lcd1:VDD",
+      "red",
+      [
+        "h-23.81",
+        "v-220.8",
+        "h115.1"
+      ]
+    ],
+    [
+      "esp:GND.2",
+      "lcd1:K",
+      "black",
+      [
+        "v0",
+        "h91.24"
+      ]
+    ],
+    [
+      "esp:GND.2",
+      "lcd1:RW",
+      "black",
+      [
+        "h24.04",
+        "v-48",
+        "h0.1"
+      ]
+    ],
+    [
+      "esp:15",
+      "lcd1:A",
+      "green",
+      [
+        "h0"
+      ]
+    ],
+    [
+      "esp:2",
+      "lcd1:D7",
+      "green",
+      [
+        "h0"
+      ]
+    ],
+    [
+      "esp:0",
+      "lcd1:D6",
+      "green",
+      [
+        "h0"
+      ]
+    ],
+    [
+      "esp:4",
+      "lcd1:D5",
+      "green",
+      [
+        "h0"
+      ]
+    ],
+    [
+      "esp:5",
+      "lcd1:D4",
+      "green",
+      [
+        "h0"
+      ]
+    ],
+    [
+      "esp:18",
+      "lcd1:D3",
+      "green",
+      [
+        "h33.64"
+      ]
+    ],
+    [
+      "esp:19",
+      "lcd1:D2",
+      "green",
+      [
+        "h62.44",
+        "v-163.2"
+      ]
+    ],
+    [
+      "esp:21",
+      "lcd1:D1",
+      "green",
+      [
+        "h0"
+      ]
+    ],
+    [
+      "esp:22",
+      "lcd1:D0",
+      "green",
+      [
+        "h43.24"
+      ]
+    ],
+    [
+      "esp:23",
+      "lcd1:E",
+      "green",
+      [
+        "h33.64"
+      ]
+    ],
+    [
+      "esp:32",
+      "lcd1:RS",
+      "green",
+      [
+        "h-14.21",
+        "v-96",
+        "h124.8"
+      ]
+    ]
+  ],
+  "dependencies": {}
+}
