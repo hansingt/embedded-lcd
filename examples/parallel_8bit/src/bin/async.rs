@@ -7,7 +7,7 @@ use esp_backtrace as _;
 use embassy_executor::Spawner;
 use embassy_time::{Delay, Duration, Timer};
 use embedded_hal::digital::OutputPin;
-use embedded_lcd::{Async, Cursor, Font, Lines, Shift, ShiftDirection};
+use embedded_lcd::{Async, AsyncOutputPin, Cursor, Font, Lines, Shift, ShiftDirection};
 use esp_hal::gpio::{Level, Output};
 use esp_hal::timer::timg::TimerGroup;
 
@@ -24,36 +24,36 @@ async fn create_display<D0, D1, D2, D3, D4, D5, D6, D7, E, RS, B>(
     rs: RS,
     backlight: B,
 ) -> embedded_lcd::Display<
-    embedded_lcd::interfaces::Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, E, RS, Delay>,
-    B,
+    embedded_lcd::interfaces::Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, E, RS, B, Delay, Async>,
     Async,
 >
 where
-    D0: OutputPin,
-    D1: OutputPin,
-    D2: OutputPin,
-    D3: OutputPin,
-    D4: OutputPin,
-    D5: OutputPin,
-    D6: OutputPin,
-    D7: OutputPin,
-    E: OutputPin,
-    RS: OutputPin,
-    B: OutputPin,
+    D0: AsyncOutputPin,
+    D1: AsyncOutputPin,
+    D2: AsyncOutputPin,
+    D3: AsyncOutputPin,
+    D4: AsyncOutputPin,
+    D5: AsyncOutputPin,
+    D6: AsyncOutputPin,
+    D7: AsyncOutputPin,
+    E: AsyncOutputPin,
+    RS: AsyncOutputPin,
+    B: AsyncOutputPin,
 {
-    let interface =
-        embedded_lcd::interfaces::Parallel8Bits::new(d0, d1, d2, d3, d4, d5, d6, d7, e, rs, Delay);
+    let interface = embedded_lcd::interfaces::Parallel8Bits::new_async(
+        d0, d1, d2, d3, d4, d5, d6, d7, e, rs, Delay,
+    )
+    .with_backlight(backlight);
     let mut lcd = embedded_lcd::Display::new_async(interface)
         .with_lines(Lines::_2)
         .with_font(Font::_5x8)
         .with_cursor(Cursor::Disabled)
         .with_shift(Shift::Cursor, ShiftDirection::Right)
         .enabled(true)
-        .with_backlight(backlight)
         .init()
         .await
         .unwrap();
-    lcd.enable_backlight().unwrap();
+    lcd.enable_backlight().await.unwrap();
     lcd
 }
 

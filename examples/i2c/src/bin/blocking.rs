@@ -1,38 +1,24 @@
 #![no_std]
 #![no_main]
 
+use embedded_hal::i2c::SevenBitAddress;
 #[allow(unused_imports)]
 use esp_backtrace as _;
 
-use embedded_hal::digital::OutputPin;
 use embedded_lcd::{Blocking, Cursor, Font, Lines, Shift, ShiftDirection};
-use esp_hal::gpio::{Level, Output};
+use esp_hal::i2c::master::I2c;
 use esp_hal::{delay::Delay, prelude::*};
 
-fn create_display<D7, D6, D5, D4, EN, RS, B>(
-    d7: D7,
-    d6: D6,
-    d5: D5,
-    d4: D4,
-    en: EN,
-    rs: RS,
-    backlight: B,
+fn create_display<I2C>(
+    i2c: &mut I2C,
 ) -> embedded_lcd::Display<
-    embedded_lcd::interfaces::Parallel4Bits<D7, D6, D5, D4, EN, RS, B, Delay, Blocking>,
+    embedded_lcd::interfaces::I2c<I2C, SevenBitAddress, Delay, Blocking>,
     Blocking,
 >
 where
-    D7: OutputPin,
-    D6: OutputPin,
-    D5: OutputPin,
-    D4: OutputPin,
-    EN: OutputPin,
-    RS: OutputPin,
-    B: OutputPin,
+    I2C: embedded_hal::i2c::I2c,
 {
-    let interface =
-        embedded_lcd::interfaces::Parallel4Bits::new(d7, d6, d5, d4, en, rs, Delay::new())
-            .with_backlight(backlight);
+    let interface = embedded_lcd::interfaces::I2c::new(i2c, 0x27, Delay::new());
     let mut lcd = embedded_lcd::Display::new(interface)
         .with_lines(Lines::_2)
         .with_font(Font::_5x8)
@@ -54,15 +40,10 @@ fn main() -> ! {
 
     // Initialize the LCD
     delay.delay(50.millis());
-    let mut lcd = create_display(
-        Output::new(peripherals.GPIO2, Level::Low),
-        Output::new(peripherals.GPIO0, Level::Low),
-        Output::new(peripherals.GPIO4, Level::Low),
-        Output::new(peripherals.GPIO5, Level::Low),
-        Output::new(peripherals.GPIO18, Level::Low),
-        Output::new(peripherals.GPIO19, Level::Low),
-        Output::new(peripherals.GPIO15, Level::Low),
-    );
+    let mut i2c = I2c::new(peripherals.I2C0, esp_hal::i2c::master::Config::default())
+        .with_scl(peripherals.GPIO32)
+        .with_sda(peripherals.GPIO33);
+    let mut lcd = create_display(&mut i2c);
 
     loop {
         lcd.clear().unwrap();

@@ -1,187 +1,331 @@
-use crate::interfaces::{AsyncInterface, BlockingInterface, Interface};
+use crate::async_output_pin::AsyncOutputPin;
+use crate::interfaces::{
+    AsyncInterface, BlockingInterface, Interface, Parallel4Bits, Parallel4BitsError,
+};
 use crate::{Async, Blocking, Font, Lines, Mode};
+use core::cell::RefCell;
+use core::fmt::Debug;
 use core::marker::PhantomData;
-use embedded_hal::delay::DelayNs;
-use embedded_hal::i2c::{AddressMode, ErrorType, I2c as EhI2c, SevenBitAddress};
-use embedded_hal_async::delay::DelayNs as AsyncDelayNs;
-use embedded_hal_async::i2c::I2c as EhAsyncI2c;
+use embedded_hal::digital::PinState;
+use embedded_hal::i2c::AddressMode;
 
 #[derive(Debug)]
-pub struct I2c<'b, I, A: AddressMode = SevenBitAddress, M: Mode = Blocking> {
-    i2c: &'b mut I,
+struct Driver<'a, I2C, A, M: Mode> {
+    i2c: &'a mut I2C,
     address: A,
-    backlight: u8,
+    state: u8,
     _mode: PhantomData<M>,
 }
 
-const ENABLE: u8 = 0b0000_0100;
-
-impl<'b, I, A> I2c<'b, I, A, Blocking>
+impl<'a, I2C, A> Driver<'a, I2C, A, Blocking>
 where
-    A: AddressMode + Copy,
-    I: EhI2c<A>,
+    A: AddressMode + Clone,
+    I2C: embedded_hal::i2c::I2c<A>,
 {
-    #[inline(always)]
-    pub fn new(i2c: &'b mut I, address: A) -> Self {
-        I2c {
-            i2c,
-            address,
-            backlight: 0,
-            _mode: PhantomData,
-        }
-    }
-
-    fn write_nibble(
-        &mut self,
-        data: u8,
-        command: bool,
-        delay: &mut impl DelayNs,
-    ) -> Result<(), I::Error> {
-        let nibble = data & 0xF0 | !command as u8;
-        #[cfg(feature = "log")]
-        log::trace!("Writing nibble {:#010b}", nibble >> 4);
+    fn set_bit(&mut self, bit: u8, state: PinState) -> Result<(), I2C::Error> {
+        let new_state = match state {
+            PinState::High => self.state | (1 << bit),
+            PinState::Low => self.state & !(1 << bit),
+        };
         self.i2c
-            .write(self.address, &[nibble | self.backlight | ENABLE])?;
-        delay.delay_us(1);
-        self.i2c
-            .write(self.address, &[nibble | self.backlight & !ENABLE])
+            .write(self.address.clone(), &[self.state])
+            .map(|_| {
+                self.state = new_state;
+            })
     }
 }
 
-impl<'b, I, A> I2c<'b, I, A, Async>
+impl<'a, I2C, A> Driver<'a, I2C, A, Async>
 where
-    A: AddressMode + Copy,
-    I: EhAsyncI2c<A>,
+    A: AddressMode + Clone,
+    I2C: embedded_hal_async::i2c::I2c<A>,
 {
-    #[inline(always)]
-    pub fn new_async(i2c: &'b mut I, address: A) -> Self {
-        Self {
-            i2c,
-            address,
-            backlight: 0,
-            _mode: PhantomData,
-        }
-    }
-
-    async fn write_nibble_async(
-        &mut self,
-        data: u8,
-        command: bool,
-        delay: &mut impl AsyncDelayNs,
-    ) -> Result<(), I::Error> {
-        let nibble = data & 0xF0 | !command as u8;
-        #[cfg(feature = "log")]
-        log::trace!("Writing nibble {:#010b}", nibble >> 4);
+    async fn set_bit(&mut self, bit: u8, state: PinState) -> Result<(), I2C::Error> {
+        let new_state = match state {
+            PinState::High => self.state | (1 << bit),
+            PinState::Low => self.state & !(1 << bit),
+        };
         self.i2c
-            .write(self.address, &[nibble | self.backlight | ENABLE])
-            .await?;
-        delay.delay_us(1).await;
-        self.i2c
-            .write(self.address, &[nibble | self.backlight & !ENABLE])
+            .write(self.address.clone(), &[self.state])
             .await
+            .map(|_| {
+                self.state = new_state;
+            })
     }
 }
 
-impl<A, I, M> Interface for I2c<'_, I, A, M>
+#[derive(Debug)]
+struct Pin<'a, 'b, I2C, A, const PIN: u8, M: Mode>(&'b RefCell<Driver<'a, I2C, A, M>>);
+
+#[derive(Debug)]
+struct PinError<E, const PIN: u8>(E);
+
+impl<E: Debug, const PIN: u8> embedded_hal::digital::Error for PinError<E, PIN> {
+    fn kind(&self) -> embedded_hal::digital::ErrorKind {
+        embedded_hal::digital::ErrorKind::Other
+    }
+}
+
+impl<'a, 'b, I2C, A, M, const PIN: u8> embedded_hal::digital::ErrorType
+    for Pin<'a, 'b, I2C, A, PIN, M>
 where
-    A: AddressMode,
-    I: ErrorType,
     M: Mode,
+    I2C: embedded_hal::i2c::ErrorType,
 {
-    type Error = I::Error;
+    type Error = PinError<I2C::Error, PIN>;
 }
 
-impl<A, I> BlockingInterface for I2c<'_, I, A, Blocking>
+impl<'a, 'b, I2C, A, const PIN: u8> embedded_hal::digital::OutputPin
+    for Pin<'a, 'b, I2C, A, PIN, Blocking>
 where
-    A: AddressMode + Copy,
-    I: EhI2c<A>,
+    A: AddressMode + Clone,
+    I2C: embedded_hal::i2c::I2c<A>,
 {
-    fn initialize(
-        &mut self,
-        lines: Lines,
-        font: Font,
-        delay: &mut impl DelayNs,
-    ) -> Result<(), Self::Error> {
-        // Initialize the display
-        self.write_nibble(0b0011_0000, true, delay)?;
-        delay.delay_us(4500);
-        self.write_nibble(0b0011_0000, true, delay)?;
-        delay.delay_us(150);
-        self.write_nibble(0b0011_0000, true, delay)?;
-        // Set the interface to 4-Bit length
-        self.write_nibble(0b0010_0000, true, delay)?;
-        // Configure the display
-        self.write_command(0b0010_0000 | lines as u8 | font as u8, delay)
+    fn set_low(&mut self) -> Result<(), Self::Error> {
+        self.0
+            .borrow_mut()
+            .set_bit(PIN, PinState::Low)
+            .map_err(PinError)
     }
 
-    fn write_command(&mut self, command: u8, delay: &mut impl DelayNs) -> Result<(), Self::Error> {
-        #[cfg(feature = "log")]
-        log::debug!("Writing command {:#010b} to LCD Display", command);
-        self.write_nibble(command, true, delay)?;
-        self.write_nibble(command << 4, true, delay)
+    fn set_high(&mut self) -> Result<(), Self::Error> {
+        self.0
+            .borrow_mut()
+            .set_bit(PIN, PinState::High)
+            .map_err(PinError)
     }
 
-    fn write_data(&mut self, data: u8, delay: &mut impl DelayNs) -> Result<(), Self::Error> {
-        #[cfg(feature = "log")]
-        log::debug!("Writing data '{:#010b}' to LCD Display", data);
-        self.write_nibble(data, false, delay)?;
-        self.write_nibble(data << 4, false, delay)
+    fn set_state(&mut self, state: PinState) -> Result<(), Self::Error> {
+        self.0.borrow_mut().set_bit(PIN, state).map_err(PinError)
+    }
+}
+
+impl<'a, 'b, I2C, A, const PIN: u8> AsyncOutputPin for Pin<'a, 'b, I2C, A, PIN, Async>
+where
+    A: AddressMode + Clone,
+    I2C: embedded_hal_async::i2c::I2c<A>,
+{
+    async fn set_low(&mut self) -> Result<(), Self::Error> {
+        self.0
+            .borrow_mut()
+            .set_bit(PIN, PinState::Low)
+            .await
+            .map_err(PinError)
+    }
+
+    async fn set_high(&mut self) -> Result<(), Self::Error> {
+        self.0
+            .borrow_mut()
+            .set_bit(PIN, PinState::High)
+            .await
+            .map_err(PinError)
+    }
+
+    async fn set_state(&mut self, state: PinState) -> Result<(), Self::Error> {
+        self.0
+            .borrow_mut()
+            .set_bit(PIN, state)
+            .await
+            .map_err(PinError)
+    }
+}
+
+#[derive(Debug)]
+pub struct I2c<'a, I2C, A, DELAY, M: Mode> {
+    driver: RefCell<Driver<'a, I2C, A, M>>,
+    delay: DELAY,
+}
+
+type I2cInterface<'a, 'b, I2C, A, DELAY, M> = Parallel4Bits<
+    Pin<'a, 'b, I2C, A, 7, M>,
+    Pin<'a, 'b, I2C, A, 6, M>,
+    Pin<'a, 'b, I2C, A, 5, M>,
+    Pin<'a, 'b, I2C, A, 4, M>,
+    Pin<'a, 'b, I2C, A, 2, M>,
+    Pin<'a, 'b, I2C, A, 0, M>,
+    Pin<'a, 'b, I2C, A, 3, M>,
+    DELAY,
+    M,
+>;
+
+type InterfaceError<'a, 'b, I2C, A, M> = Parallel4BitsError<
+    Pin<'a, 'b, I2C, A, 7, M>,
+    Pin<'a, 'b, I2C, A, 6, M>,
+    Pin<'a, 'b, I2C, A, 5, M>,
+    Pin<'a, 'b, I2C, A, 4, M>,
+    Pin<'a, 'b, I2C, A, 2, M>,
+    Pin<'a, 'b, I2C, A, 0, M>,
+    Pin<'a, 'b, I2C, A, 3, M>,
+>;
+
+impl<'a, 'b, I2C, A, M> InterfaceError<'a, 'b, I2C, A, M>
+where
+    M: Mode,
+    I2C: embedded_hal::i2c::ErrorType,
+{
+    fn into_error(self) -> I2C::Error {
+        match self {
+            Parallel4BitsError::EError(e) => e.0,
+            Parallel4BitsError::RSError(e) => e.0,
+            Parallel4BitsError::D7Error(e) => e.0,
+            Parallel4BitsError::D6Error(e) => e.0,
+            Parallel4BitsError::D5Error(e) => e.0,
+            Parallel4BitsError::D4Error(e) => e.0,
+            Parallel4BitsError::BacklightError(e) => e.0,
+        }
+    }
+}
+
+impl<'a, I2C, A, DELAY, M: Mode> Interface for I2c<'a, I2C, A, DELAY, M>
+where
+    I2C: embedded_hal::i2c::ErrorType,
+{
+    type Error = I2C::Error;
+}
+
+// -------------------------------------------------------------------------------------------------
+// BLOCKING INTERFACE
+// -------------------------------------------------------------------------------------------------
+impl<'a, I2C, A, DELAY> I2c<'a, I2C, A, DELAY, Blocking>
+where
+    A: AddressMode + Clone,
+    I2C: embedded_hal::i2c::I2c<A>,
+    DELAY: embedded_hal::delay::DelayNs + Clone,
+{
+    #[inline]
+    pub fn new(i2c: &'a mut I2C, address: A, delay: DELAY) -> Self {
+        Self {
+            driver: RefCell::new(Driver {
+                i2c,
+                address,
+                state: 0,
+                _mode: PhantomData,
+            }),
+            delay,
+        }
+    }
+
+    #[inline]
+    fn interface<'b>(&'b mut self) -> I2cInterface<'a, 'b, I2C, A, DELAY, Blocking> {
+        Parallel4Bits::new(
+            Pin(&self.driver),
+            Pin(&self.driver),
+            Pin(&self.driver),
+            Pin(&self.driver),
+            Pin(&self.driver),
+            Pin(&self.driver),
+            self.delay.clone(),
+        )
+        .with_backlight(Pin(&self.driver))
+    }
+}
+
+impl<'a, I2C, A, DELAY> embedded_hal::delay::DelayNs for I2c<'a, I2C, A, DELAY, Blocking>
+where
+    DELAY: embedded_hal::delay::DelayNs + Clone,
+{
+    #[inline]
+    fn delay_ns(&mut self, ns: u32) {
+        self.delay.delay_ns(ns);
+    }
+}
+
+impl<'a, I2C, A, DELAY> BlockingInterface for I2c<'a, I2C, A, DELAY, Blocking>
+where
+    A: AddressMode + Clone,
+    I2C: embedded_hal::i2c::I2c<A>,
+    DELAY: embedded_hal::delay::DelayNs + Clone,
+{
+    fn initialize(&mut self, lines: Lines, font: Font) -> Result<(), Self::Error> {
+        self.interface()
+            .initialize(lines, font)
+            .map_err(|e| e.into_error())
+    }
+
+    fn write(&mut self, data: u8, command: bool) -> Result<(), Self::Error> {
+        self.interface()
+            .write(data, command)
+            .map_err(|e| e.into_error())
     }
 
     fn backlight(&mut self, enable: bool) -> Result<(), Self::Error> {
-        self.backlight = (enable as u8) << 3;
-        self.i2c.write(self.address, &[self.backlight])
+        self.interface()
+            .backlight(enable)
+            .map_err(|e| e.into_error())
     }
 }
 
-impl<A, I> AsyncInterface for I2c<'_, I, A, Async>
+// -------------------------------------------------------------------------------------------------
+// ASYNC INTERFACE
+// -------------------------------------------------------------------------------------------------
+impl<'a, I2C, A, DELAY> I2c<'a, I2C, A, DELAY, Async>
 where
-    A: AddressMode + Copy,
-    I: EhAsyncI2c<A>,
+    A: AddressMode + Clone,
+    I2C: embedded_hal_async::i2c::I2c<A>,
+    DELAY: embedded_hal_async::delay::DelayNs + Clone,
 {
-    async fn initialize(
-        &mut self,
-        lines: Lines,
-        font: Font,
-        delay: &mut impl AsyncDelayNs,
-    ) -> Result<(), Self::Error> {
-        // Initialize the display
-        self.write_nibble_async(0b0011_0000, true, delay).await?;
-        delay.delay_us(4500).await;
-        self.write_nibble_async(0b0011_0000, true, delay).await?;
-        delay.delay_us(150).await;
-        self.write_nibble_async(0b0011_0000, true, delay).await?;
-        // Set the interface to 4-Bit length
-        self.write_nibble_async(0b0010_0000, true, delay).await?;
-        // Configure the display
-        self.write_command(0b0010_0000 | lines as u8 | font as u8, delay)
+    #[inline]
+    pub fn new_async(i2c: &'a mut I2C, address: A, delay: DELAY) -> Self {
+        Self {
+            driver: RefCell::new(Driver {
+                i2c,
+                address,
+                state: 0,
+                _mode: PhantomData,
+            }),
+            delay,
+        }
+    }
+
+    #[inline]
+    fn interface<'b>(&'b mut self) -> I2cInterface<'a, 'b, I2C, A, DELAY, Async> {
+        Parallel4Bits::new_async(
+            Pin(&self.driver),
+            Pin(&self.driver),
+            Pin(&self.driver),
+            Pin(&self.driver),
+            Pin(&self.driver),
+            Pin(&self.driver),
+            self.delay.clone(),
+        )
+        .with_backlight(Pin(&self.driver))
+    }
+}
+
+impl<'a, I2C, A, DELAY> embedded_hal_async::delay::DelayNs for I2c<'a, I2C, A, DELAY, Async>
+where
+    DELAY: embedded_hal_async::delay::DelayNs + Clone,
+{
+    #[inline]
+    async fn delay_ns(&mut self, ns: u32) {
+        self.delay.delay_ns(ns).await;
+    }
+}
+
+impl<'a, I2C, A, DELAY> AsyncInterface for I2c<'a, I2C, A, DELAY, Async>
+where
+    A: AddressMode + Clone,
+    I2C: embedded_hal_async::i2c::I2c<A>,
+    DELAY: embedded_hal_async::delay::DelayNs + Clone,
+{
+    async fn initialize(&mut self, lines: Lines, font: Font) -> Result<(), Self::Error> {
+        self.interface()
+            .initialize(lines, font)
             .await
+            .map_err(|e| e.into_error())
     }
 
-    async fn write_command(
-        &mut self,
-        command: u8,
-        delay: &mut impl AsyncDelayNs,
-    ) -> Result<(), Self::Error> {
-        #[cfg(feature = "log")]
-        log::debug!("Writing command {:#010b} to LCD Display", command);
-        self.write_nibble_async(command, true, delay).await?;
-        self.write_nibble_async(command << 4, true, delay).await
-    }
-
-    async fn write_data(
-        &mut self,
-        data: u8,
-        delay: &mut impl AsyncDelayNs,
-    ) -> Result<(), Self::Error> {
-        #[cfg(feature = "log")]
-        log::debug!("Writing data '{:#010b}' to LCD Display", data);
-        self.write_nibble_async(data, false, delay).await?;
-        self.write_nibble_async(data << 4, false, delay).await
+    async fn write(&mut self, data: u8, command: bool) -> Result<(), Self::Error> {
+        self.interface()
+            .write(data, command)
+            .await
+            .map_err(|e| e.into_error())
     }
 
     async fn backlight(&mut self, enable: bool) -> Result<(), Self::Error> {
-        self.backlight = (enable as u8) << 3;
-        self.i2c.write(self.address, &[self.backlight]).await
+        self.interface()
+            .backlight(enable)
+            .await
+            .map_err(|e| e.into_error())
     }
 }

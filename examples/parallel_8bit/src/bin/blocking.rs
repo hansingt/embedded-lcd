@@ -23,8 +23,21 @@ fn create_display<D0, D1, D2, D3, D4, D5, D6, D7, E, RS, B>(
     rs: RS,
     backlight: B,
 ) -> embedded_lcd::Display<
-    embedded_lcd::interfaces::Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, E, RS, Delay>,
-    B,
+    embedded_lcd::interfaces::Parallel8Bits<
+        D0,
+        D1,
+        D2,
+        D3,
+        D4,
+        D5,
+        D6,
+        D7,
+        E,
+        RS,
+        B,
+        Delay,
+        Blocking,
+    >,
     Blocking,
 >
 where
@@ -52,14 +65,14 @@ where
         e,
         rs,
         Delay::new(),
-    );
+    )
+    .with_backlight(backlight);
     let mut lcd = embedded_lcd::Display::new(interface)
         .with_lines(Lines::_2)
         .with_font(Font::_5x8)
         .with_cursor(Cursor::Disabled)
         .with_shift(Shift::Cursor, ShiftDirection::Right)
         .enabled(true)
-        .with_backlight(backlight)
         .init()
         .unwrap();
     lcd.enable_backlight().unwrap();

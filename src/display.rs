@@ -1,7 +1,6 @@
 use crate::interfaces::{AsyncInterface, BlockingInterface, Interface};
 use crate::{Async, Blocking, Cursor, Font, Lines, Mode, Shift, ShiftDirection};
 use core::marker::PhantomData;
-use embedded_hal::digital::OutputPin;
 
 #[repr(u8)]
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
@@ -16,9 +15,8 @@ enum Commands {
 }
 
 #[derive(Debug)]
-pub struct Display<I: Interface, B: OutputPin, DM: Mode> {
+pub struct Display<I: Interface, DM: Mode> {
     interface: I,
-    backlight: Option<B>,
     lines: Lines,
     font: Font,
     display_control: u8,
@@ -26,7 +24,7 @@ pub struct Display<I: Interface, B: OutputPin, DM: Mode> {
     _mode: PhantomData<DM>,
 }
 
-impl<I: Interface, B: OutputPin, DM: Mode> Display<I, B, DM> {
+impl<I: Interface, DM: Mode> Display<I, DM> {
     #[inline]
     pub fn with_lines(mut self, lines: Lines) -> Self {
         self.lines = lines;
@@ -57,32 +55,6 @@ impl<I: Interface, B: OutputPin, DM: Mode> Display<I, B, DM> {
         self
     }
 
-    #[inline]
-    pub fn with_backlight(mut self, pin: B) -> Self {
-        self.backlight = Some(pin);
-        self
-    }
-
-    #[inline]
-    pub fn enable_backlight(&mut self) -> Result<(), B::Error> {
-        #[cfg(feature = "log")]
-        log::info!("Enable backlight");
-        if self.backlight.is_some() {
-            self.backlight.as_mut().unwrap().set_high()?;
-        }
-        Ok(())
-    }
-
-    #[inline]
-    pub fn disable_backlight(&mut self) -> Result<(), B::Error> {
-        #[cfg(feature = "log")]
-        log::info!("Disable backlight");
-        if self.backlight.is_some() {
-            self.backlight.as_mut().unwrap().set_low()?;
-        }
-        Ok(())
-    }
-
     fn character_as_byte(c: char) -> u8 {
         match c.is_ascii() {
             true => c as u8,
@@ -98,12 +70,11 @@ impl<I: Interface, B: OutputPin, DM: Mode> Display<I, B, DM> {
     }
 }
 
-impl<I: BlockingInterface, B: OutputPin> Display<I, B, Blocking> {
+impl<I: BlockingInterface> Display<I, Blocking> {
     #[inline(always)]
     pub fn new(interface: I) -> Self {
         Self {
             interface,
-            backlight: None,
             lines: Lines::default(),
             font: Font::default(),
             display_control: Commands::DisplayControl as u8,
@@ -123,7 +94,6 @@ impl<I: BlockingInterface, B: OutputPin> Display<I, B, Blocking> {
         Ok(self)
     }
 
-    #[inline]
     pub fn clear(&mut self) -> Result<(), I::Error> {
         #[cfg(feature = "log")]
         log::info!("Clearing display");
@@ -132,7 +102,6 @@ impl<I: BlockingInterface, B: OutputPin> Display<I, B, Blocking> {
         Ok(())
     }
 
-    #[inline]
     pub fn home(&mut self) -> Result<(), I::Error> {
         #[cfg(feature = "log")]
         log::info!("Moving cursor home");
@@ -141,7 +110,6 @@ impl<I: BlockingInterface, B: OutputPin> Display<I, B, Blocking> {
         Ok(())
     }
 
-    #[inline]
     pub fn shift(&mut self, shift: Shift, shift_direction: ShiftDirection) -> Result<(), I::Error> {
         #[cfg(feature = "log")]
         log::info!("Shifting the {} to the {}", shift, shift_direction);
@@ -188,14 +156,25 @@ impl<I: BlockingInterface, B: OutputPin> Display<I, B, Blocking> {
         }
         Ok(())
     }
+
+    pub fn enable_backlight(&mut self) -> Result<(), I::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Enable backlight");
+        self.interface.backlight(true)
+    }
+
+    pub fn disable_backlight(&mut self) -> Result<(), I::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Disable backlight");
+        self.interface.backlight(false)
+    }
 }
 
-impl<I: AsyncInterface, B: OutputPin> Display<I, B, Async> {
+impl<I: AsyncInterface> Display<I, Async> {
     #[inline(always)]
     pub fn new_async(interface: I) -> Self {
         Self {
             interface,
-            backlight: None,
             lines: Lines::default(),
             font: Font::default(),
             display_control: Commands::DisplayControl as u8,
@@ -215,7 +194,6 @@ impl<I: AsyncInterface, B: OutputPin> Display<I, B, Async> {
         Ok(self)
     }
 
-    #[inline]
     pub async fn clear(&mut self) -> Result<(), I::Error> {
         #[cfg(feature = "log")]
         log::info!("Clearing display");
@@ -224,14 +202,12 @@ impl<I: AsyncInterface, B: OutputPin> Display<I, B, Async> {
         Ok(())
     }
 
-    #[inline]
     pub async fn home(&mut self) -> Result<(), I::Error> {
         #[cfg(feature = "log")]
         log::info!("Moving cursor home");
         self.interface.write(Commands::Home as u8, true).await
     }
 
-    #[inline]
     pub async fn shift(
         &mut self,
         shift: Shift,
@@ -282,5 +258,17 @@ impl<I: AsyncInterface, B: OutputPin> Display<I, B, Async> {
             self.write_character(c).await?;
         }
         Ok(())
+    }
+
+    pub async fn enable_backlight(&mut self) -> Result<(), I::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Enable backlight");
+        self.interface.backlight(true).await
+    }
+
+    pub async fn disable_backlight(&mut self) -> Result<(), I::Error> {
+        #[cfg(feature = "log")]
+        log::info!("Disable backlight");
+        self.interface.backlight(false).await
     }
 }

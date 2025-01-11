@@ -1,7 +1,8 @@
 #![cfg_attr(not(test), no_std)]
-
 pub mod interfaces;
 
+mod async_output_pin;
+pub use async_output_pin::AsyncOutputPin;
 mod display;
 
 use core::fmt::Formatter;
