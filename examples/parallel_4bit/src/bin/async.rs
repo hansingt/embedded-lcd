@@ -6,6 +6,7 @@ use esp_backtrace as _;
 
 use embassy_executor::Spawner;
 use embassy_time::{Delay, Duration, Timer};
+use embedded_lcd::interfaces::FourBitBus;
 use embedded_lcd::{Async, AsyncOutputPin, Cursor, Font, Lines, Shift, ShiftDirection};
 use esp_hal::gpio::{Level, Output};
 use esp_hal::timer::timg::TimerGroup;
@@ -20,6 +21,7 @@ async fn create_display<D7, D6, D5, D4, EN, RS, B>(
     backlight: B,
 ) -> embedded_lcd::Display<
     embedded_lcd::interfaces::Parallel4Bits<D7, D6, D5, D4, EN, RS, B, Delay, Async>,
+    FourBitBus,
     Async,
 >
 where
@@ -49,10 +51,12 @@ where
 
 #[esp_hal_embassy::main]
 async fn main(_s: Spawner) -> ! {
+    esp_println::logger::init_logger_from_env();
+    // This line is for Wokwi only so that the console output is formatted correctly
+    esp_println::print!("\x1b[20h");
+    
     let peripherals = esp_hal::init(esp_hal::Config::default());
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-
-    esp_println::logger::init_logger_from_env();
 
     // Initialize the embassy runtime
     esp_hal_embassy::init(timg0.timer0);

@@ -6,7 +6,7 @@ use esp_backtrace as _;
 
 use embassy_executor::Spawner;
 use embassy_time::{Delay, Duration, Timer};
-use embedded_hal::digital::OutputPin;
+use embedded_lcd::interfaces::EightBitBus;
 use embedded_lcd::{Async, AsyncOutputPin, Cursor, Font, Lines, Shift, ShiftDirection};
 use esp_hal::gpio::{Level, Output};
 use esp_hal::timer::timg::TimerGroup;
@@ -25,6 +25,7 @@ async fn create_display<D0, D1, D2, D3, D4, D5, D6, D7, E, RS, B>(
     backlight: B,
 ) -> embedded_lcd::Display<
     embedded_lcd::interfaces::Parallel8Bits<D0, D1, D2, D3, D4, D5, D6, D7, E, RS, B, Delay, Async>,
+    EightBitBus,
     Async,
 >
 where

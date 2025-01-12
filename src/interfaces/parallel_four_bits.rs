@@ -1,18 +1,20 @@
 use crate::async_output_pin::AsyncOutputPin;
-use crate::interfaces::{AsyncInterface, BlockingInterface, Interface};
-use crate::{Async, Blocking, Font, Lines, Mode};
+use crate::interfaces::{
+    Async4BitBus, AsyncInterface, Blocking4BitBus, BlockingInterface, ErrorType, FourBitBus,
+};
+use crate::{Async, Blocking, Mode};
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
-use embedded_hal::digital::{ErrorType, OutputPin};
+use embedded_hal::digital::OutputPin;
 
 pub enum Parallel4BitsError<
-    D7: ErrorType,
-    D6: ErrorType,
-    D5: ErrorType,
-    D4: ErrorType,
-    E: ErrorType,
-    RS: ErrorType,
-    B: ErrorType,
+    D7: embedded_hal::digital::ErrorType,
+    D6: embedded_hal::digital::ErrorType,
+    D5: embedded_hal::digital::ErrorType,
+    D4: embedded_hal::digital::ErrorType,
+    E: embedded_hal::digital::ErrorType,
+    RS: embedded_hal::digital::ErrorType,
+    B: embedded_hal::digital::ErrorType,
 > {
     EError(E::Error),
     RSError(RS::Error),
@@ -25,13 +27,13 @@ pub enum Parallel4BitsError<
 
 impl<D7, D6, D5, D4, E, RS, B> Debug for Parallel4BitsError<D7, D6, D5, D4, E, RS, B>
 where
-    D7: ErrorType,
-    D6: ErrorType,
-    D5: ErrorType,
-    D4: ErrorType,
-    E: ErrorType,
-    RS: ErrorType,
-    B: ErrorType,
+    D7: embedded_hal::digital::ErrorType,
+    D6: embedded_hal::digital::ErrorType,
+    D5: embedded_hal::digital::ErrorType,
+    D4: embedded_hal::digital::ErrorType,
+    E: embedded_hal::digital::ErrorType,
+    RS: embedded_hal::digital::ErrorType,
+    B: embedded_hal::digital::ErrorType,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
@@ -66,16 +68,16 @@ impl<D7, D6, D5, D4, E, RS, B, DELAY, M: Mode> Parallel4Bits<D7, D6, D5, D4, E, 
     }
 }
 
-impl<D7, D6, D5, D4, E, RS, B, DELAY, M: Mode> Interface
+impl<D7, D6, D5, D4, E, RS, B, DELAY, M: Mode> ErrorType
     for Parallel4Bits<D7, D6, D5, D4, E, RS, B, DELAY, M>
 where
-    D7: ErrorType,
-    D6: ErrorType,
-    D5: ErrorType,
-    D4: ErrorType,
-    E: ErrorType,
-    RS: ErrorType,
-    B: ErrorType,
+    D7: embedded_hal::digital::ErrorType,
+    D6: embedded_hal::digital::ErrorType,
+    D5: embedded_hal::digital::ErrorType,
+    D4: embedded_hal::digital::ErrorType,
+    E: embedded_hal::digital::ErrorType,
+    RS: embedded_hal::digital::ErrorType,
+    B: embedded_hal::digital::ErrorType,
 {
     type Error = Parallel4BitsError<D7, D6, D5, D4, E, RS, B>;
 }
@@ -93,38 +95,24 @@ where
     RS: OutputPin,
     B: OutputPin,
 {
-    #[allow(clippy::complexity)]
-    fn set_outputs(
-        &mut self,
-        data: u8,
-    ) -> Result<(), Parallel4BitsError<D7, D6, D5, D4, E, RS, B>> {
-        #[cfg(feature = "log")]
-        log::trace!("Writing nibble {:#06b}", data & 0x0F);
+    fn set_outputs(&mut self, data: u8) -> Result<(), <Self as ErrorType>::Error> {
         // Set the data bits
-        match data & 0b1000 {
-            0 => self.d7.set_low().map_err(Parallel4BitsError::D7Error),
-            _ => self.d7.set_high().map_err(Parallel4BitsError::D7Error),
-        }?;
-        match data & 0b0100 {
-            0 => self.d6.set_low().map_err(Parallel4BitsError::D6Error),
-            _ => self.d6.set_high().map_err(Parallel4BitsError::D6Error),
-        }?;
-        match data & 0b0010 {
-            0 => self.d5.set_low().map_err(Parallel4BitsError::D5Error),
-            _ => self.d5.set_high().map_err(Parallel4BitsError::D5Error),
-        }?;
-        match data & 0b0001 {
-            0 => self.d4.set_low().map_err(Parallel4BitsError::D4Error),
-            _ => self.d4.set_high().map_err(Parallel4BitsError::D4Error),
-        }
+        self.d7
+            .set_state((data & (1 << 3) != 0).into())
+            .map_err(Parallel4BitsError::D7Error)?;
+        self.d6
+            .set_state((data & (1 << 2) != 0).into())
+            .map_err(Parallel4BitsError::D6Error)?;
+        self.d5
+            .set_state((data & (1 << 1) != 0).into())
+            .map_err(Parallel4BitsError::D5Error)?;
+        self.d4
+            .set_state((data & (1 << 0) != 0).into())
+            .map_err(Parallel4BitsError::D4Error)
     }
 
-    #[allow(clippy::complexity)]
     #[inline]
-    fn _backlight(
-        &mut self,
-        enable: bool,
-    ) -> Result<(), Parallel4BitsError<D7, D6, D5, D4, E, RS, B>> {
+    fn _backlight(&mut self, enable: bool) -> Result<(), <Self as ErrorType>::Error> {
         if self.backlight.is_some() {
             self.backlight
                 .as_mut()
@@ -160,21 +148,6 @@ where
             _mode: PhantomData,
         }
     }
-
-    #[allow(clippy::complexity)]
-    fn write_nibble(
-        &mut self,
-        data: u8,
-    ) -> Result<(), Parallel4BitsError<D7, D6, D5, D4, E, RS, B>> {
-        // Set the output pin levels
-        self.set_outputs(data)?;
-        // Open the latch
-        self.e.set_high().map_err(Parallel4BitsError::EError)?;
-        self.delay.delay_us(1);
-        // Close the latch
-        self.e.set_low().map_err(Parallel4BitsError::EError)?;
-        Ok(())
-    }
 }
 
 impl<D7, D6, D5, D4, E, RS, B, DELAY> embedded_hal::delay::DelayNs
@@ -195,7 +168,39 @@ where
     }
 }
 
-impl<D7, D6, D5, D4, E, RS, B, DELAY> BlockingInterface
+impl<D7, D6, D5, D4, E, RS, B, DELAY> Blocking4BitBus
+    for Parallel4Bits<D7, D6, D5, D4, E, RS, B, DELAY, Blocking>
+where
+    B: OutputPin,
+    D4: OutputPin,
+    D5: OutputPin,
+    D6: OutputPin,
+    D7: OutputPin,
+    DELAY: embedded_hal::delay::DelayNs,
+    E: OutputPin,
+    RS: OutputPin,
+{
+    fn write_nibble(&mut self, data: u8) -> Result<(), Self::Error> {
+        // Set the output pin levels
+        self.set_outputs(data)?;
+        // Open the latch
+        self.e.set_high().map_err(Parallel4BitsError::EError)?;
+        self.delay.delay_ns(500);
+        // Close the latch
+        self.e.set_low().map_err(Parallel4BitsError::EError)?;
+        self.delay.delay_ns(500);
+        Ok(())
+    }
+
+    #[inline]
+    fn set_command_mode(&mut self, command: bool) -> Result<(), Self::Error> {
+        self.rs
+            .set_state((!command).into())
+            .map_err(Parallel4BitsError::RSError)
+    }
+}
+
+impl<D7, D6, D5, D4, E, RS, B, DELAY> BlockingInterface<FourBitBus>
     for Parallel4Bits<D7, D6, D5, D4, E, RS, B, DELAY, Blocking>
 where
     D7: OutputPin,
@@ -207,40 +212,6 @@ where
     B: OutputPin,
     DELAY: embedded_hal::delay::DelayNs,
 {
-    fn initialize(&mut self, lines: Lines, font: Font) -> Result<(), Self::Error> {
-        self.write_nibble(0b0011)?;
-        self.delay.delay_us(4500);
-        self.write_nibble(0b0011)?;
-        self.delay.delay_us(150);
-        self.write_nibble(0b0011)?;
-        self.write_nibble(0b0010)?;
-
-        let function_set = match font {
-            Font::_5x10 => 0b0010_0100,
-            Font::_5x8 => match lines {
-                Lines::_1 => 0b0010_0000,
-                Lines::_2 => 0b0010_1000,
-            },
-        };
-        self.write(function_set, true)
-    }
-
-    fn write(&mut self, data: u8, command: bool) -> Result<(), Self::Error> {
-        #[cfg(feature = "log")]
-        log::debug!("Writing '{:#010b}' to LCD Display", data);
-        // Enable data mode
-        match command {
-            true => self.rs.set_low().map_err(Parallel4BitsError::RSError),
-            false => self.rs.set_high().map_err(Parallel4BitsError::RSError),
-        }?;
-        // Wait for the address to settle
-        self.delay.delay_ns(60);
-        // Write the data in two nibbles in MSB first order.
-        self.write_nibble(data >> 4)?;
-        self.write_nibble(data)?;
-        Ok(())
-    }
-
     #[inline]
     fn backlight(&mut self, enable: bool) -> Result<(), Self::Error> {
         self._backlight(enable)
@@ -264,41 +235,23 @@ where
         &mut self,
         data: u8,
     ) -> Result<(), Parallel4BitsError<D7, D6, D5, D4, E, RS, B>> {
-        #[cfg(feature = "log")]
-        log::trace!("Writing nibble {:#06b}", data & 0x0F);
         // Set the data bits
-        match data & 0b1000 {
-            0 => self.d7.set_low().await.map_err(Parallel4BitsError::D7Error),
-            _ => self
-                .d7
-                .set_high()
-                .await
-                .map_err(Parallel4BitsError::D7Error),
-        }?;
-        match data & 0b0100 {
-            0 => self.d6.set_low().await.map_err(Parallel4BitsError::D6Error),
-            _ => self
-                .d6
-                .set_high()
-                .await
-                .map_err(Parallel4BitsError::D6Error),
-        }?;
-        match data & 0b0010 {
-            0 => self.d5.set_low().await.map_err(Parallel4BitsError::D5Error),
-            _ => self
-                .d5
-                .set_high()
-                .await
-                .map_err(Parallel4BitsError::D5Error),
-        }?;
-        match data & 0b0001 {
-            0 => self.d4.set_low().await.map_err(Parallel4BitsError::D4Error),
-            _ => self
-                .d4
-                .set_high()
-                .await
-                .map_err(Parallel4BitsError::D4Error),
-        }
+        self.d7
+            .set_state((data & (1 << 3) != 0).into())
+            .await
+            .map_err(Parallel4BitsError::D7Error)?;
+        self.d6
+            .set_state((data & (1 << 2) != 0).into())
+            .await
+            .map_err(Parallel4BitsError::D6Error)?;
+        self.d5
+            .set_state((data & (1 << 1) != 0).into())
+            .await
+            .map_err(Parallel4BitsError::D5Error)?;
+        self.d4
+            .set_state((data & (1 << 0) != 0).into())
+            .await
+            .map_err(Parallel4BitsError::D4Error)
     }
 
     #[inline]
@@ -343,26 +296,6 @@ where
             _mode: PhantomData,
         }
     }
-
-    async fn write_nibble(
-        &mut self,
-        data: u8,
-    ) -> Result<(), Parallel4BitsError<D7, D6, D5, D4, E, RS, B>> {
-        // Set the output pin levels
-        self.set_outputs(data).await?;
-        // Open the latch
-        self.e
-            .set_high()
-            .await
-            .map_err(Parallel4BitsError::EError)?;
-        // Wait for the controller to fetch the data
-        self.delay.delay_ns(500).await;
-        // Close the latch
-        self.e.set_low().await.map_err(Parallel4BitsError::EError)?;
-        // Wait until we can send the next data
-        self.delay.delay_ns(500).await;
-        Ok(())
-    }
 }
 
 impl<D7, D6, D5, D4, E, RS, B, DELAY> embedded_hal_async::delay::DelayNs
@@ -383,7 +316,47 @@ where
     }
 }
 
-impl<D7, D6, D5, D4, E, RS, B, DELAY> AsyncInterface
+impl<D7, D6, D5, D4, E, RS, B, DELAY> Async4BitBus
+    for Parallel4Bits<D7, D6, D5, D4, E, RS, B, DELAY, Async>
+where
+    B: AsyncOutputPin,
+    D4: AsyncOutputPin,
+    D5: AsyncOutputPin,
+    D6: AsyncOutputPin,
+    D7: AsyncOutputPin,
+    DELAY: embedded_hal_async::delay::DelayNs,
+    E: AsyncOutputPin,
+    RS: AsyncOutputPin,
+{
+    async fn write_nibble(
+        &mut self,
+        data: u8,
+    ) -> Result<(), Parallel4BitsError<D7, D6, D5, D4, E, RS, B>> {
+        // Set the output pin levels
+        self.set_outputs(data).await?;
+        // Open the latch
+        self.e
+            .set_high()
+            .await
+            .map_err(Parallel4BitsError::EError)?;
+        // Wait for the controller to fetch the data
+        self.delay.delay_ns(500).await;
+        // Close the latch
+        self.e.set_low().await.map_err(Parallel4BitsError::EError)?;
+        self.delay.delay_ns(500).await;
+        Ok(())
+    }
+
+    #[inline]
+    async fn set_command_mode(&mut self, command: bool) -> Result<(), Self::Error> {
+        self.rs
+            .set_state((!command).into())
+            .await
+            .map_err(Parallel4BitsError::RSError)
+    }
+}
+
+impl<D7, D6, D5, D4, E, RS, B, DELAY> AsyncInterface<FourBitBus>
     for Parallel4Bits<D7, D6, D5, D4, E, RS, B, DELAY, Async>
 where
     D7: AsyncOutputPin,
@@ -395,44 +368,6 @@ where
     B: AsyncOutputPin,
     DELAY: embedded_hal_async::delay::DelayNs,
 {
-    async fn initialize(&mut self, lines: Lines, font: Font) -> Result<(), Self::Error> {
-        self.write_nibble(0b0011).await?;
-        self.delay.delay_us(4500).await;
-        self.write_nibble(0b0011).await?;
-        self.delay.delay_us(150).await;
-        self.write_nibble(0b0011).await?;
-        self.write_nibble(0b0010).await?;
-
-        let function_set = match font {
-            Font::_5x10 => 0b0010_0100,
-            Font::_5x8 => match lines {
-                Lines::_1 => 0b0010_0000,
-                Lines::_2 => 0b0010_1000,
-            },
-        };
-        self.write(function_set, true).await
-    }
-
-    async fn write(&mut self, data: u8, command: bool) -> Result<(), Self::Error> {
-        #[cfg(feature = "log")]
-        log::debug!("Writing '{:#010b}' to LCD Display", data);
-        // Enable data mode
-        match command {
-            true => self.rs.set_low().await.map_err(Parallel4BitsError::RSError),
-            false => self
-                .rs
-                .set_high()
-                .await
-                .map_err(Parallel4BitsError::RSError),
-        }?;
-        // Wait for the address to settle
-        self.delay.delay_ns(60).await;
-        // Write the data in two nibbles in MSB first order.
-        self.write_nibble(data >> 4).await?;
-        self.write_nibble(data).await?;
-        Ok(())
-    }
-
     #[inline]
     async fn backlight(&mut self, enable: bool) -> Result<(), Self::Error> {
         self._backlight(enable).await

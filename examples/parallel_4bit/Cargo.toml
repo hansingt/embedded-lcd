@@ -19,7 +19,7 @@ esp-backtrace = { version = "0.14.2", features = [
 esp-hal = { version = "0.22.0", features = ["esp32"] }
 esp-println = { version = "0.12.0", features = ["esp32", "log"] }
 embedded-hal = "1.0.0"
-embedded-lcd = { path = "../.." }
+embedded-lcd = { path = "../..", features = ["log"] }
 embassy-executor = { version = "0.6.3", features = ["task-arena-size-12288"] }
 embassy-time = { version = "0.3.2", features = ["generic-queue-8"] }
 esp-hal-embassy = { version = "0.5.0", features = ["esp32"] }

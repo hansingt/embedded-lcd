@@ -7,6 +7,7 @@ use embedded_hal::i2c::SevenBitAddress;
 #[allow(unused_imports)]
 use esp_backtrace as _;
 
+use embedded_lcd::interfaces::FourBitBus;
 use embedded_lcd::{Async, Cursor, Font, Lines, Shift, ShiftDirection};
 use esp_hal::i2c::master::I2c;
 use esp_hal::prelude::*;
@@ -14,7 +15,11 @@ use esp_hal::timer::timg::TimerGroup;
 
 async fn create_display<I2C>(
     i2c: &mut I2C,
-) -> embedded_lcd::Display<embedded_lcd::interfaces::I2c<I2C, SevenBitAddress, Delay, Async>, Async>
+) -> embedded_lcd::Display<
+    embedded_lcd::interfaces::I2c<I2C, SevenBitAddress, Delay, Async>,
+    FourBitBus,
+    Async,
+>
 where
     I2C: embedded_hal_async::i2c::I2c,
 {
@@ -34,10 +39,12 @@ where
 
 #[main]
 async fn main(_s: Spawner) -> ! {
+    esp_println::logger::init_logger_from_env();
+    // This line is for Wokwi only so that the console output is formatted correctly
+    esp_println::print!("\x1b[20h");
+    
     let peripherals = esp_hal::init(esp_hal::Config::default());
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-
-    esp_println::logger::init_logger_from_env();
 
     // Initialize the embassy runtime
     esp_hal_embassy::init(timg0.timer0);

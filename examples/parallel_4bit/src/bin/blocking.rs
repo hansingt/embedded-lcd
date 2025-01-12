@@ -5,6 +5,7 @@
 use esp_backtrace as _;
 
 use embedded_hal::digital::OutputPin;
+use embedded_lcd::interfaces::FourBitBus;
 use embedded_lcd::{Blocking, Cursor, Font, Lines, Shift, ShiftDirection};
 use esp_hal::gpio::{Level, Output};
 use esp_hal::{delay::Delay, prelude::*};
@@ -19,6 +20,7 @@ fn create_display<D7, D6, D5, D4, EN, RS, B>(
     backlight: B,
 ) -> embedded_lcd::Display<
     embedded_lcd::interfaces::Parallel4Bits<D7, D6, D5, D4, EN, RS, B, Delay, Blocking>,
+    FourBitBus,
     Blocking,
 >
 where
@@ -48,6 +50,8 @@ where
 #[entry]
 fn main() -> ! {
     esp_println::logger::init_logger_from_env();
+    // This line is for Wokwi only so that the console output is formatted correctly
+    esp_println::print!("\x1b[20h");
 
     let peripherals = esp_hal::init(esp_hal::Config::default());
     let delay = Delay::new();

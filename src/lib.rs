@@ -1,4 +1,6 @@
 #![cfg_attr(not(test), no_std)]
+#![allow(async_fn_in_trait)]
+
 pub mod interfaces;
 
 mod async_output_pin;

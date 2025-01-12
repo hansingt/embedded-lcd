@@ -1,4 +1,4 @@
-use crate::interfaces::{AsyncInterface, BlockingInterface, Interface};
+use crate::interfaces::{AsyncInterface, BlockingInterface, BusWidth};
 use crate::{Async, Blocking, Cursor, Font, Lines, Mode, Shift, ShiftDirection};
 use core::fmt;
 use core::marker::PhantomData;
@@ -16,16 +16,17 @@ enum Commands {
 }
 
 #[derive(Debug)]
-pub struct Display<I: Interface, DM: Mode> {
+pub struct Display<I, W: BusWidth, DM: Mode> {
     interface: I,
     lines: Lines,
     font: Font,
     display_control: u8,
     entry_mode: u8,
     _mode: PhantomData<DM>,
+    _width: PhantomData<W>,
 }
 
-impl<I: Interface, DM: Mode> Display<I, DM> {
+impl<I, W: BusWidth, DM: Mode> Display<I, W, DM> {
     #[inline]
     pub fn with_lines(mut self, lines: Lines) -> Self {
         self.lines = lines;
@@ -74,7 +75,11 @@ impl<I: Interface, DM: Mode> Display<I, DM> {
 // -------------------------------------------------------------------------------------------------
 // BLOCKING INTERFACE
 // -------------------------------------------------------------------------------------------------
-impl<I: BlockingInterface> Display<I, Blocking> {
+impl<I, W> Display<I, W, Blocking>
+where
+    W: BusWidth,
+    I: BlockingInterface<W>,
+{
     #[inline(always)]
     pub fn new(interface: I) -> Self {
         Self {
@@ -84,13 +89,23 @@ impl<I: BlockingInterface> Display<I, Blocking> {
             display_control: Commands::DisplayControl as u8,
             entry_mode: Commands::EntryModeSet as u8,
             _mode: PhantomData,
+            _width: PhantomData,
         }
     }
 
     pub fn init(mut self) -> Result<Self, I::Error> {
         #[cfg(feature = "log")]
         log::info!("Initializing LCD");
-        self.interface.initialize(self.lines, self.font)?;
+        self.interface.initialize()?;
+        // Configure font and lines
+        let function_set = match self.font {
+            Font::_5x10 => W::WIDTH | 0b0000_0100,
+            Font::_5x8 => match self.lines {
+                Lines::_1 => W::WIDTH,
+                Lines::_2 => W::WIDTH | 0b000_1000,
+            },
+        };
+        self.interface.write(function_set, true)?;
         // Configure the display
         self.interface.write(self.display_control, true)?;
         self.interface.write(self.entry_mode, true)?;
@@ -174,7 +189,11 @@ impl<I: BlockingInterface> Display<I, Blocking> {
     }
 }
 
-impl<I: BlockingInterface> fmt::Write for Display<I, Blocking> {
+impl<I, W> fmt::Write for Display<I, W, Blocking>
+where
+    W: BusWidth,
+    I: BlockingInterface<W>,
+{
     #[inline]
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_string(s).map_err(|_| fmt::Error)
@@ -189,7 +208,11 @@ impl<I: BlockingInterface> fmt::Write for Display<I, Blocking> {
 // -------------------------------------------------------------------------------------------------
 // ASYNC INTERFACE
 // -------------------------------------------------------------------------------------------------
-impl<I: AsyncInterface> Display<I, Async> {
+impl<I, W> Display<I, W, Async>
+where
+    W: BusWidth,
+    I: AsyncInterface<W>,
+{
     #[inline(always)]
     pub fn new_async(interface: I) -> Self {
         Self {
@@ -199,13 +222,23 @@ impl<I: AsyncInterface> Display<I, Async> {
             display_control: Commands::DisplayControl as u8,
             entry_mode: Commands::EntryModeSet as u8,
             _mode: PhantomData,
+            _width: PhantomData,
         }
     }
 
     pub async fn init(mut self) -> Result<Self, I::Error> {
         #[cfg(feature = "log")]
         log::info!("Initializing LCD");
-        self.interface.initialize(self.lines, self.font).await?;
+        self.interface.initialize().await?;
+        // Configure font and lines
+        let function_set = match self.font {
+            Font::_5x10 => 0b0010_0100,
+            Font::_5x8 => match self.lines {
+                Lines::_1 => 0b0010_0000,
+                Lines::_2 => 0b0010_1000,
+            },
+        };
+        self.interface.write(function_set, true).await?;
         // Configure the display
         self.interface.write(self.display_control, true).await?;
         self.interface.write(self.entry_mode, true).await?;

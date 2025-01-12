@@ -5,6 +5,7 @@ use embedded_hal::i2c::SevenBitAddress;
 #[allow(unused_imports)]
 use esp_backtrace as _;
 
+use embedded_lcd::interfaces::FourBitBus;
 use embedded_lcd::{Blocking, Cursor, Font, Lines, Shift, ShiftDirection};
 use esp_hal::i2c::master::I2c;
 use esp_hal::{delay::Delay, prelude::*};
@@ -13,6 +14,7 @@ fn create_display<I2C>(
     i2c: &mut I2C,
 ) -> embedded_lcd::Display<
     embedded_lcd::interfaces::I2c<I2C, SevenBitAddress, Delay, Blocking>,
+    FourBitBus,
     Blocking,
 >
 where
@@ -34,6 +36,8 @@ where
 #[entry]
 fn main() -> ! {
     esp_println::logger::init_logger_from_env();
+    // This line is for Wokwi only so that the console output is formatted correctly
+    esp_println::print!("\x1b[20h");
 
     let peripherals = esp_hal::init(esp_hal::Config::default());
     let delay = Delay::new();

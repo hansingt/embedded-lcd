@@ -5,6 +5,7 @@
 use esp_backtrace as _;
 
 use embedded_hal::digital::OutputPin;
+use embedded_lcd::interfaces::EightBitBus;
 use embedded_lcd::{Blocking, Cursor, Font, Lines, Shift, ShiftDirection};
 use esp_hal::delay::Delay;
 use esp_hal::gpio::{Level, Output};
@@ -38,6 +39,7 @@ fn create_display<D0, D1, D2, D3, D4, D5, D6, D7, E, RS, B>(
         Delay,
         Blocking,
     >,
+    EightBitBus,
     Blocking,
 >
 where
