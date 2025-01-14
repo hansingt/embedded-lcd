@@ -42,7 +42,7 @@ async fn main(_s: Spawner) -> ! {
     esp_println::logger::init_logger_from_env();
     // This line is for Wokwi only so that the console output is formatted correctly
     esp_println::print!("\x1b[20h");
-    
+
     let peripherals = esp_hal::init(esp_hal::Config::default());
     let timg0 = TimerGroup::new(peripherals.TIMG0);
 
