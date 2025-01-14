@@ -117,7 +117,7 @@ where
         #[cfg(feature = "log")]
         log::info!("Clearing display");
         self.interface.write(Commands::Clear as u8, true)?;
-        self.interface.delay_us(50);
+        self.interface.delay_us(1500);
         Ok(())
     }
 
@@ -125,7 +125,6 @@ where
         #[cfg(feature = "log")]
         log::info!("Moving cursor home");
         self.interface.write(Commands::Home as u8, true)?;
-        self.interface.delay_us(50);
         Ok(())
     }
 
@@ -250,7 +249,7 @@ where
         #[cfg(feature = "log")]
         log::info!("Clearing display");
         self.interface.write(Commands::Clear as u8, true).await?;
-        self.interface.delay_us(50).await;
+        self.interface.delay_us(1500).await;
         Ok(())
     }
 
